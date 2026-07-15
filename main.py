@@ -2,7 +2,7 @@ import os, sys, time, json, ssl, socket, threading, asyncio, base64, binascii, r
 from datetime import datetime, timedelta
 from concurrent.futures import ThreadPoolExecutor
 from threading import Thread
-from flask import Flask, request, jsonify, render_template_string, session, redirect, url_for, Response, stream_with_context
+from flask import Flask, request, jsonify, render_template_string, session, redirect, url_for, Response, stream_with_context, send_file
 from functools import wraps
 import requests
 import urllib3
@@ -947,8 +947,7 @@ def clean_and_load_squad_targets():
             start_spam(uid, 'squad')
             print(f"{G}✅ Restored Squad Target: {uid} (Remaining: {int(30 - (current_time - start_time).total_seconds()/60)} min){RS}")
         else:
-            remove_target_from_file(uid)
-            print(f"{R}🗑️ Expired & Removed: {uid}{RS}")
+            print(f"{R}⏰ Expired: {uid} (Still kept in file){RS}")
             
     save_squad_json(updated_data)
 
@@ -1171,7 +1170,8 @@ def start_spam(target_uid, spam_type='full'):
 
 def stop_spam(target_uid):
     with active_spam_lock:
-        if target_uid in active_spam_targets: 
+        if target_uid in active_spam_targets:
+            remove_target_from_file(target_uid) 
             
             if active_spam_targets[target_uid].get('added_by_squad', False):
                 if target_uid in squad_targets:
@@ -1540,7 +1540,7 @@ class FF_CLient():
         except:
             pass
 
-# ==================== ACCOUNT RUNNER & RESETTER (FIXED) ====================
+# ==================== ACCOUNT RUNNER & RESETTER (REMOVED AUTO RESET) ====================
 
 def start_account(account):
     """প্রতিটি অ্যাকাউন্টের লগইন প্রসেস শুরু করে"""
@@ -1614,12 +1614,6 @@ def reset_accounts():
         is_resetting = False
         print(f"{R}❌ [FATAL ERROR] Reset failed: {e}{RS}")
         return False, f"System error during reset: {str(e)}"
-
-def auto_reset_accounts():
-    """প্রতি ১০ মিনিট পরপর একাউন্টগুলো রিসেট করার লুপ"""
-    while True:
-        time.sleep(ACCOUNT_REFRESH_INTERVAL)
-        reset_accounts()
 
 # ==================== FLASK ROUTES ====================
 @app.route('/login', methods=['GET', 'POST'])
@@ -3902,14 +3896,15 @@ def main():
     print(f"""
     {C}{BOLD}
     ╔══════════════════════════════════════════════════════════════════════╗
-    ║              🎯 MAHIR SPAM SYSTEM v3.0 🎯                           ║
+    ║              🎯 MAHIR SPAM SYSTEM v3.2 🎯                           ║
     ║                                                                      ║
     ║     📁 accs.txt → Room Spam + Group/Squad Spam + Badge Spam         ║
     ║                                                                      ║
     ║     ✅ Room Spam + Group/Squad *Badge Spam (accs.txt)                ║
     ║     ✅ Auto Status Check: Every 3 seconds                           ║
     ║     ✅ Squad Auto-Join: 30 minutes                                  ║
-    ║     ✅ Auto Account Reset: Every 10 minutes                         ║
+    ║     ✅ File Manager: Download/Upload targets.txt & squad_data.json   ║
+    ║     ✅ Squad Leader Management: View & Cleanup expired               ║
     ║     ✅ Target Viewer: /targets (Pass: HUNTERMAHIR)                  ║
     ║                                                                      ║
     ║     🌐 Web Panel: http://127.0.0.1:8080                             ║
@@ -3925,20 +3920,16 @@ def main():
     status_thread.start()
     print(f"{G}✅ Status checker thread started (every {STATUS_CHECK_INTERVAL}s){RS}")
 
-    # ২. অটো রিসেট থ্রেড চালু করা (প্রতি ১০ মিনিটে)
-    reset_thread = Thread(target=auto_reset_accounts, daemon=True)
-    reset_thread.start()
-
-    # ৩. প্রথমবার একাউন্ট রান করা
+    # ২. প্রথমবার একাউন্ট রান করা
     Thread(target=run_accounts, daemon=True).start()
 
-    # ৪. কিছুক্ষণ অপেক্ষা করে বাকি টার্গেটগুলো লোড করা
+    # ৩. কিছুক্ষণ অপেক্ষা করে বাকি টার্গেটগুলো লোড করা
     time.sleep(1)
     clean_and_load_squad_targets()
     load_saved_targets()
 
     port = int(os.environ.get("PORT", 8080))
-    # ৫. ফ্লাস্ক অ্যাপ রান করা
+    # ৪. ফ্লাস্ক অ্যাপ রান করা
     app.run(host='0.0.0.0', port=port, debug=False, threaded=True)
 
 if __name__ == "__main__":
