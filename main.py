@@ -154,7 +154,7 @@ def load_unified_accounts(filename="accs.txt"):
                         processed_list.append({'id': uid, 'password': pwd})
         
         for i, acc in enumerate(processed_list):
-            acc_type = 'group' if (i % 10) < 4 else 'room'
+            acc_type = 'group' if (i % 10) < 9 else 'room'
             acc['type'] = acc_type
             all_accounts.append(acc)
             
@@ -1171,8 +1171,7 @@ def start_spam(target_uid, spam_type='full'):
 
 def stop_spam(target_uid):
     with active_spam_lock:
-        if target_uid in active_spam_targets:
-            remove_target_from_file(target_uid) 
+        if target_uid in active_spam_targets: 
             
             if active_spam_targets[target_uid].get('added_by_squad', False):
                 if target_uid in squad_targets:
@@ -2435,6 +2434,266 @@ def stream_console():
     
     return Response(stream_with_context(generate()), mimetype='text/event-stream')
 
+# ==================== NEW ROUTES FOR FILES AND SQUAD LEADER MANAGEMENT ====================
+
+@app.route('/api/download/targets', methods=['GET'])
+@login_required
+def download_targets_file():
+    """Download target.txt file"""
+    if os.path.exists('target.txt'):
+        with open('target.txt', 'r', encoding='utf-8') as f:
+            content = f.read()
+        return Response(content, mimetype='text/plain', headers={'Content-Disposition': 'attachment;filename=target.txt'})
+    return jsonify({'success': False, 'message': 'target.txt not found'}), 404
+
+@app.route('/api/download/squad_data', methods=['GET'])
+@login_required
+def download_squad_data_file():
+    """Download squad_data.json file"""
+    if os.path.exists(SQUAD_DATA_FILE):
+        with open(SQUAD_DATA_FILE, 'r', encoding='utf-8') as f:
+            content = f.read()
+        return Response(content, mimetype='application/json', headers={'Content-Disposition': 'attachment;filename=squad_data.json'})
+    return jsonify({'success': False, 'message': 'squad_data.json not found'}), 404
+
+@app.route('/api/upload/targets', methods=['POST'])
+@login_required
+def upload_targets_file():
+    """Upload target.txt file - replaces existing targets and starts spam for them"""
+    if 'file' not in request.files:
+        return jsonify({'success': False, 'message': 'No file uploaded'}), 400
+    
+    file = request.files['file']
+    if not file.filename.endswith('.txt'):
+        return jsonify({'success': False, 'message': 'Only .txt files allowed'}), 400
+    
+    try:
+        content = file.read().decode('utf-8')
+        
+        # Save the file
+        with open('target.txt', 'w', encoding='utf-8') as f:
+            f.write(content)
+        
+        # Parse UIDs and start spam
+        uids = []
+        for line in content.splitlines():
+            line = line.strip()
+            if line and line.isdigit():
+                uids.append(line)
+        
+        started = []
+        failed = []
+        for uid in uids:
+            success, message = start_spam(uid, 'full')
+            if success:
+                started.append(uid)
+            else:
+                failed.append({'uid': uid, 'reason': message})
+        
+        return jsonify({
+            'success': True,
+            'message': f'Uploaded target.txt with {len(uids)} UIDs. Started: {len(started)}, Failed: {len(failed)}',
+            'started': started,
+            'failed': failed,
+            'total': len(uids)
+        })
+        
+    except Exception as e:
+        return jsonify({'success': False, 'message': f'Error: {str(e)}'}), 500
+
+@app.route('/api/upload/squad_data', methods=['POST'])
+@login_required
+def upload_squad_data_file():
+    """Upload squad_data.json file"""
+    if 'file' not in request.files:
+        return jsonify({'success': False, 'message': 'No file uploaded'}), 400
+    
+    file = request.files['file']
+    if not file.filename.endswith('.json'):
+        return jsonify({'success': False, 'message': 'Only .json files allowed'}), 400
+    
+    try:
+        content = file.read().decode('utf-8')
+        # Validate JSON
+        data = json.loads(content)
+        
+        # Save the file
+        with open(SQUAD_DATA_FILE, 'w', encoding='utf-8') as f:
+            json.dump(data, f, indent=4)
+        
+        # Process and start squad targets
+        current_time = datetime.now()
+        restored = 0
+        expired = 0
+        
+        for uid, info in data.items():
+            try:
+                start_time = datetime.fromisoformat(info['start_time'])
+                if (current_time - start_time).total_seconds() < SQUAD_JOIN_DURATION:
+                    start_spam(uid, 'squad')
+                    restored += 1
+                else:
+                    expired += 1
+            except:
+                pass
+        
+        return jsonify({
+            'success': True,
+            'message': f'Uploaded squad_data.json with {len(data)} entries. Restored: {restored}, Expired: {expired}',
+            'total': len(data),
+            'restored': restored,
+            'expired': expired
+        })
+        
+    except json.JSONDecodeError:
+        return jsonify({'success': False, 'message': 'Invalid JSON format'}), 400
+    except Exception as e:
+        return jsonify({'success': False, 'message': f'Error: {str(e)}'}), 500
+
+@app.route('/api/squad-leaders', methods=['GET'])
+@login_required
+def get_squad_leaders():
+    """Get all squad leaders with their details and expiration time"""
+    try:
+        data = load_squad_json()
+        current_time = datetime.now()
+        leaders = []
+        
+        for uid, info in data.items():
+            start_time = datetime.fromisoformat(info['start_time'])
+            elapsed = (current_time - start_time).total_seconds()
+            remaining = max(0, SQUAD_JOIN_DURATION - elapsed)
+            is_expired = remaining <= 0
+            
+            # Get target info if available
+            target_info = {}
+            if uid in active_spam_targets:
+                target_info = active_spam_targets[uid]
+            
+            leaders.append({
+                'uid': uid,
+                'original_target': info.get('original_target', ''),
+                'start_time': start_time.isoformat(),
+                'elapsed_minutes': int(elapsed / 60),
+                'remaining_minutes': int(remaining / 60),
+                'is_expired': is_expired,
+                'status': target_info.get('status', 'UNKNOWN'),
+                'is_online': target_info.get('is_online', False),
+                'spam_active': uid in active_spam_targets
+            })
+        
+        # Sort by remaining time (active first)
+        leaders.sort(key=lambda x: (x['is_expired'], -x['remaining_minutes']))
+        
+        return jsonify({
+            'success': True,
+            'total': len(leaders),
+            'leaders': leaders,
+            'expired_count': len([l for l in leaders if l['is_expired']]),
+            'active_count': len([l for l in leaders if not l['is_expired']])
+        })
+        
+    except Exception as e:
+        return jsonify({'success': False, 'message': f'Error: {str(e)}'}), 500
+
+@app.route('/api/squad-leaders/cleanup', methods=['POST'])
+@login_required
+def cleanup_squad_leaders():
+    """Remove expired squad leaders (more than 30 minutes old) from squad_data.json and target list"""
+    try:
+        data = load_squad_json()
+        current_time = datetime.now()
+        removed = []
+        kept = {}
+        
+        for uid, info in data.items():
+            start_time = datetime.fromisoformat(info['start_time'])
+            elapsed = (current_time - start_time).total_seconds()
+            
+            if elapsed >= SQUAD_JOIN_DURATION:
+                # Expired - remove from active spam if present
+                with active_spam_lock:
+                    if uid in active_spam_targets:
+                        del active_spam_targets[uid]
+                    if uid in target_status_cache:
+                        del target_status_cache[uid]
+                removed.append(uid)
+            else:
+                kept[uid] = info
+        
+        # Save updated data
+        save_squad_json(kept)
+        
+        return jsonify({
+            'success': True,
+            'message': f'Cleaned up {len(removed)} expired squad leaders',
+            'removed': removed,
+            'kept_count': len(kept),
+            'removed_count': len(removed)
+        })
+        
+    except Exception as e:
+        return jsonify({'success': False, 'message': f'Error: {str(e)}'}), 500
+
+@app.route('/api/squad-leaders/remove/<uid>', methods=['POST'])
+@login_required
+def remove_squad_leader(uid):
+    """Remove a specific squad leader from squad_data.json and stop spam"""
+    try:
+        data = load_squad_json()
+        
+        if uid not in data:
+            return jsonify({'success': False, 'message': f'UID {uid} not found in squad_data.json'}), 404
+        
+        # Stop spam if active
+        stop_spam(uid)
+        
+        # Remove from data
+        del data[uid]
+        save_squad_json(data)
+        
+        return jsonify({
+            'success': True,
+            'message': f'Removed squad leader {uid}',
+            'uid': uid
+        })
+        
+    except Exception as e:
+        return jsonify({'success': False, 'message': f'Error: {str(e)}'}), 500
+
+@app.route('/api/cleanup/expired-targets', methods=['POST'])
+@login_required
+def cleanup_expired_targets():
+    """Clean up all expired spam targets from target.txt and active targets list"""
+    try:
+        with active_spam_lock:
+            targets_to_remove = []
+            current_time = datetime.now()
+            
+            for uid, info in active_spam_targets.items():
+                start_time = info.get('start_time')
+                if start_time:
+                    elapsed = (current_time - start_time).total_seconds()
+                    # If target is older than 30 minutes and marked as squad leader
+                    if elapsed >= SQUAD_JOIN_DURATION and info.get('is_squad_leader', False):
+                        targets_to_remove.append(uid)
+        
+        removed = []
+        for uid in targets_to_remove:
+            success, _ = stop_spam(uid)
+            if success:
+                removed.append(uid)
+        
+        return jsonify({
+            'success': True,
+            'message': f'Cleaned up {len(removed)} expired squad leader targets',
+            'removed': removed,
+            'removed_count': len(removed)
+        })
+        
+    except Exception as e:
+        return jsonify({'success': False, 'message': f'Error: {str(e)}'}), 500
+
 # ==================== TEMPLATES ====================
 LOGIN_TEMPLATE = '''<!DOCTYPE html>
 <html lang="en">
@@ -2895,7 +3154,7 @@ TARGETS_TEMPLATE = '''<!DOCTYPE html>
 </body>
 </html>'''
 
-# ==================== HTML_TEMPLATE WITH PARALLEL STATUS REFRESH ====================
+# ==================== HTML_TEMPLATE WITH FILES AND SQUAD LEADER MANAGEMENT ====================
 
 HTML_TEMPLATE = '''<!DOCTYPE html>
 <html lang="en">
@@ -2985,7 +3244,23 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
         .refresh-status-text { font-size: 0.7rem; color: rgba(255,255,255,0.4); margin-top: 8px; padding: 8px 12px; background: rgba(0,0,0,0.3); border-radius: 6px; border-left: 3px solid #00d4ff; }
         .refresh-status-text .highlight { color: #00ffcc; }
         .refresh-status-text .error { color: #ff4444; }
-        @media (max-width: 768px) { .controls-grid { grid-template-columns: 1fr; } .input-group { flex-direction: column; } .btn { width: 100%; justify-content: center; } .header { flex-direction: column; text-align: center; } }
+        /* Squad Leader Styles */
+        .squad-leader-item { background: rgba(255,215,0,0.05); border-left: 3px solid #ffd700; padding: 8px 12px; margin: 4px 0; border-radius: 6px; display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; font-size: 0.8rem; gap: 6px; }
+        .squad-leader-item .uid { color: #ffd700; font-family: monospace; font-weight: bold; }
+        .squad-leader-item .expired { color: #ff4444; }
+        .squad-leader-item .active { color: #00ffcc; }
+        .file-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; margin-top: 8px; }
+        .file-btn { background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06); border-radius: 8px; padding: 10px; text-align: center; cursor: pointer; transition: 0.3s; }
+        .file-btn:hover { background: rgba(255,255,255,0.06); border-color: rgba(255,0,127,0.2); }
+        .file-btn i { font-size: 1.2rem; color: #ff007f; }
+        .file-btn .name { font-size: 0.7rem; color: rgba(255,255,255,0.4); margin-top: 2px; }
+        .file-btn .sub { font-size: 0.6rem; color: rgba(255,255,255,0.2); }
+        .btn-gold { background: linear-gradient(135deg, #ffd700, #ffaa00); color: #000; }
+        .btn-gold:hover { transform: translateY(-2px); box-shadow: 0 5px 20px rgba(255,215,0,0.3); }
+        @media (max-width: 768px) { .controls-grid { grid-template-columns: 1fr; } .input-group { flex-direction: column; } .btn { width: 100%; justify-content: center; } .header { flex-direction: column; text-align: center; } .file-grid { grid-template-columns: 1fr; } }
+        .squad-list { max-height: 200px; overflow-y: auto; margin-top: 8px; }
+        .squad-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+        .squad-actions .btn { flex: 1; min-width: 100px; justify-content: center; }
     </style>
 </head>
 <body>
@@ -2995,11 +3270,11 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
             <div>
                 <div class="logo"><i class="fas fa-bolt"></i> MAHIR SYSTEM</div>
                 <div style="color: rgba(255,255,255,0.3); font-size:0.8rem;">
-                    SPAM CONTROL ENGINE v3.1
+                    SPAM CONTROL ENGINE v3.2
                     <span class="feature-badge"><i class="fas fa-sync"></i> Auto Status Check (5s)</span>
                     <span class="feature-badge"><i class="fas fa-users"></i> Squad Auto-Join</span>
                     <span class="feature-badge"><i class="fas fa-layer-group"></i> ROOM+GROUP</span>
-                    <span class="feature-badge"><i class="fas fa-clock"></i> Auto Reset: 10min</span>
+                    <span class="feature-badge"><i class="fas fa-file"></i> File Manager</span>
                 </div>
             </div>
             <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
@@ -3029,9 +3304,59 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
                     </div>
                     <div style="display:flex; flex-direction:column; gap:6px; min-width:120px;">
                         <button class="btn btn-success btn-sm" onclick="resetAccounts()"><i class="fas fa-sync-alt"></i> RESET ACCOUNTS</button>
-                        <div class="reset-info"><i class="fas fa-clock"></i> Auto reset every 10 min</div>
+                        <div class="reset-info"><i class="fas fa-info-circle"></i> Manual reset only</div>
                     </div>
                 </div>
+            </div>
+        </div>
+
+        <!-- ==================== FILE MANAGER CARD ==================== -->
+        <div class="control-card" style="margin-bottom:20px; border: 1px solid rgba(255,215,0,0.1);">
+            <h3><i class="fas fa-folder-open" style="color:#ffd700;"></i> FILE MANAGER</h3>
+            <div class="file-grid">
+                <div class="file-btn" onclick="downloadFile('targets')">
+                    <i class="fas fa-download"></i>
+                    <div class="name">target.txt</div>
+                    <div class="sub">Download</div>
+                </div>
+                <div class="file-btn" onclick="document.getElementById('targetsFileInput').click()">
+                    <i class="fas fa-upload"></i>
+                    <div class="name">target.txt</div>
+                    <div class="sub">Upload</div>
+                    <input type="file" id="targetsFileInput" accept=".txt" style="display:none;" onchange="uploadFile('targets', this)">
+                </div>
+                <div class="file-btn" onclick="downloadFile('squad_data')">
+                    <i class="fas fa-download"></i>
+                    <div class="name">squad_data.json</div>
+                    <div class="sub">Download</div>
+                </div>
+                <div class="file-btn" onclick="document.getElementById('squadDataFileInput').click()">
+                    <i class="fas fa-upload"></i>
+                    <div class="name">squad_data.json</div>
+                    <div class="sub">Upload</div>
+                    <input type="file" id="squadDataFileInput" accept=".json" style="display:none;" onchange="uploadFile('squad_data', this)">
+                </div>
+                <div class="file-btn" onclick="downloadFile('accs')">
+                    <i class="fas fa-download"></i>
+                    <div class="name">accs.txt</div>
+                    <div class="sub">Download</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ==================== SQUAD LEADER MANAGEMENT CARD ==================== -->
+        <div class="control-card" style="margin-bottom:20px; border: 1px solid rgba(255,215,0,0.15);">
+            <h3><i class="fas fa-crown" style="color:#ffd700;"></i> SQUAD LEADER MANAGEMENT</h3>
+            <div style="display:flex; gap:10px; flex-wrap:wrap; margin-bottom:10px;">
+                <button class="btn btn-gold btn-sm" onclick="refreshSquadLeaders()"><i class="fas fa-sync-alt"></i> Refresh List</button>
+                <button class="btn btn-danger btn-sm" onclick="cleanupExpiredSquadLeaders()"><i class="fas fa-trash"></i> Cleanup Expired (30min+)</button>
+                <button class="btn btn-warning btn-sm" onclick="cleanupExpiredTargets()"><i class="fas fa-broom"></i> Cleanup Expired Targets</button>
+            </div>
+            <div id="squadLeaderList" class="squad-list">
+                <div style="color:rgba(255,255,255,0.3); text-align:center; padding:15px;">Loading squad leaders...</div>
+            </div>
+            <div style="font-size:0.6rem; color:rgba(255,255,255,0.2); margin-top:5px;">
+                <i class="fas fa-info-circle"></i> Squad leaders expire after 30 minutes. Click cleanup to remove expired ones.
             </div>
         </div>
 
@@ -3103,8 +3428,8 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
                 <div class="line"><span style="color:rgba(255,255,255,0.3);">[System]</span> <span class="console-info">Status check every 5 seconds</span></div>
                 <div class="line"><span style="color:rgba(255,255,255,0.3);">[System]</span> <span class="console-info">Squad auto-join enabled (30 min duration)</span></div>
                 <div class="line"><span style="color:rgba(255,255,255,0.3);">[System]</span> <span class="console-info">Accounts: accs.txt</span></div>
-                <div class="line"><span style="color:rgba(255,255,255,0.3);">[System]</span> <span class="console-info">Auto reset every 10 minutes</span></div>
-                <div class="line"><span style="color:rgba(255,255,255,0.3);">[System]</span> <span class="console-info">Manual refresh available - Click "REFRESH ALL TARGETS STATUS"</span></div>
+                <div class="line"><span style="color:rgba(255,255,255,0.3);">[System]</span> <span class="console-info">File Manager: Download/Upload targets.txt & squad_data.json</span></div>
+                <div class="line"><span style="color:rgba(255,255,255,0.3);">[System]</span> <span class="console-info">Squad leaders expire after 30 minutes</span></div>
             </div>
         </div>
 
@@ -3115,7 +3440,7 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
             </div>
         </div>
 
-        <div class="footer">MAHIR SYSTEM v3.1 | <i class="fas fa-code"></i> Engine by MAHIR | Status Check: 5s | Squad Auto-Join: 30min | Auto Reset: 10min | ROOM+GROUP | Manual Refresh Available</div>
+        <div class="footer">MAHIR SYSTEM v3.2 | <i class="fas fa-code"></i> Engine by MAHIR | Status Check: 5s | Squad Auto-Join: 30min | ROOM+GROUP | File Manager</div>
     </div>
 
     <script>
@@ -3145,7 +3470,7 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
             setTimeout(() => t.remove(), 4000);
         }
 
-        // ==================== REFRESH FUNCTIONS (GET METHOD) ====================
+        // ==================== REFRESH FUNCTIONS ====================
         function refreshAllStatus() {
             const statusDiv = document.getElementById('refreshStatus');
             const btn = document.querySelector('.btn-refresh');
@@ -3156,7 +3481,6 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
             btn.disabled = true;
             btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Refreshing...';
             
-            // GET method ব্যবহার করা হচ্ছে (POST ও সাপোর্ট করে)
             fetch('/api/refresh-all-status', { 
                 method: 'GET',
                 headers: { 'Content-Type': 'application/json' }
@@ -3181,7 +3505,6 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
                     showToast(`✅ ${d.message}`, 'success');
                     refreshStatus();
                     
-                    // Add to console
                     const consoleBox = document.getElementById('consoleBox');
                     const line = document.createElement('div');
                     line.className = 'line';
@@ -3223,7 +3546,6 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
             statusDiv.innerHTML = `<i class="fas fa-spinner fa-spin" style="color:#00d4ff;"></i> 🔄 Refreshing target ${uid}...`;
             statusDiv.style.color = '#00ffcc';
             
-            // GET method ব্যবহার করা হচ্ছে
             fetch(`/api/refresh-target-status/${uid}`, { 
                 method: 'GET',
                 headers: { 'Content-Type': 'application/json' }
@@ -3249,7 +3571,6 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
                     refreshStatus();
                     document.getElementById('refreshSingleUid').value = '';
                     
-                    // Add to console
                     const consoleBox = document.getElementById('consoleBox');
                     const line = document.createElement('div');
                     line.className = 'line';
@@ -3270,7 +3591,6 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
             });
         }
 
-        // Enter key support for single refresh
         document.addEventListener('DOMContentLoaded', function() {
             const input = document.getElementById('refreshSingleUid');
             if (input) {
@@ -3283,6 +3603,164 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
             }
         });
         // ==================== END REFRESH FUNCTIONS ====================
+
+        // ==================== FILE MANAGEMENT FUNCTIONS ====================
+        function downloadFile(type) {
+            const urls = {
+                'targets': '/api/download/targets',
+                'squad_data': '/api/download/squad_data',
+                'accs': '/api/get/accs'
+            };
+            const names = {
+                'targets': 'target.txt',
+                'squad_data': 'squad_data.json',
+                'accs': 'accs.txt'
+            };
+            if (urls[type]) {
+                window.location.href = urls[type];
+                showToast(`Downloading ${names[type]}...`, 'info');
+            }
+        }
+
+        function uploadFile(type, input) {
+            const file = input.files[0];
+            if (!file) return;
+            
+            const urls = {
+                'targets': '/api/upload/targets',
+                'squad_data': '/api/upload/squad_data'
+            };
+            const names = {
+                'targets': 'target.txt',
+                'squad_data': 'squad_data.json'
+            };
+            
+            if (!urls[type]) return;
+            
+            const fd = new FormData();
+            fd.append('file', file);
+            
+            showToast(`Uploading ${names[type]}...`, 'info');
+            
+            fetch(urls[type], { method: 'POST', body: fd })
+                .then(r => r.json())
+                .then(d => {
+                    if (d.success) {
+                        showToast(`${d.message}`, 'success');
+                        refreshStatus();
+                        refreshSquadLeaders();
+                        const consoleBox = document.getElementById('consoleBox');
+                        const line = document.createElement('div');
+                        line.className = 'line';
+                        line.innerHTML = `<span style="color:rgba(255,255,255,0.3);">[File]</span> <span class="console-success">✅ Uploaded ${names[type]}: ${d.total || 'OK'}</span>`;
+                        consoleBox.appendChild(line);
+                        consoleBox.scrollTop = consoleBox.scrollHeight;
+                    } else {
+                        showToast(`Upload failed: ${d.message}`, 'error');
+                    }
+                })
+                .catch(() => showToast('Upload failed', 'error'));
+            
+            input.value = '';
+        }
+
+        // ==================== SQUAD LEADER FUNCTIONS ====================
+        function refreshSquadLeaders() {
+            const list = document.getElementById('squadLeaderList');
+            list.innerHTML = '<div style="color:rgba(255,255,255,0.3); text-align:center; padding:15px;">Loading...</div>';
+            
+            fetch('/api/squad-leaders')
+                .then(r => r.json())
+                .then(d => {
+                    if (d.success) {
+                        if (d.leaders && d.leaders.length > 0) {
+                            list.innerHTML = d.leaders.map(l => `
+                                <div class="squad-leader-item">
+                                    <div>
+                                        <span class="uid">👑 ${l.uid}</span>
+                                        ${l.is_expired ? '<span class="expired">⏰ EXPIRED</span>' : `<span class="active">⏱ ${l.remaining_minutes}m remaining</span>`}
+                                        <span style="font-size:0.6rem; color:rgba(255,255,255,0.3);">(Started: ${l.elapsed_minutes}m ago)</span>
+                                    </div>
+                                    <div style="display:flex; gap:6px; align-items:center; flex-wrap:wrap;">
+                                        ${l.original_target ? `<span style="font-size:0.6rem; color:rgba(255,255,255,0.3);">🎯 From: ${l.original_target}</span>` : ''}
+                                        <span style="font-size:0.6rem; color:${l.is_online ? '#00ffcc' : '#ff4444'};">
+                                            ${l.is_online ? '🟢 Online' : '⚪ Offline'}
+                                        </span>
+                                        ${!l.is_expired ? `<button class="btn btn-danger btn-sm" onclick="removeSquadLeader('${l.uid}')" style="padding:2px 8px; font-size:0.6rem;">✕</button>` : ''}
+                                    </div>
+                                </div>
+                            `).join('');
+                        } else {
+                            list.innerHTML = '<div style="color:rgba(255,255,255,0.3); text-align:center; padding:15px;">No squad leaders found</div>';
+                        }
+                    } else {
+                        list.innerHTML = `<div style="color:#ff4444; text-align:center; padding:15px;">❌ ${d.message}</div>`;
+                    }
+                })
+                .catch(() => {
+                    list.innerHTML = '<div style="color:#ff4444; text-align:center; padding:15px;">❌ Failed to load squad leaders</div>';
+                });
+        }
+
+        function cleanupExpiredSquadLeaders() {
+            if (!confirm('⚠️ Remove all expired squad leaders (>30 min)?')) return;
+            
+            showToast('Cleaning up expired squad leaders...', 'info');
+            
+            fetch('/api/squad-leaders/cleanup', { method: 'POST' })
+                .then(r => r.json())
+                .then(d => {
+                    if (d.success) {
+                        showToast(`✅ ${d.message}`, 'success');
+                        refreshSquadLeaders();
+                        refreshStatus();
+                        const consoleBox = document.getElementById('consoleBox');
+                        const line = document.createElement('div');
+                        line.className = 'line';
+                        line.innerHTML = `<span style="color:rgba(255,255,255,0.3);">[Cleanup]</span> <span class="console-success">✅ Removed ${d.removed_count} expired squad leaders</span>`;
+                        consoleBox.appendChild(line);
+                        consoleBox.scrollTop = consoleBox.scrollHeight;
+                    } else {
+                        showToast(`❌ ${d.message}`, 'error');
+                    }
+                })
+                .catch(() => showToast('❌ Cleanup failed', 'error'));
+        }
+
+        function cleanupExpiredTargets() {
+            if (!confirm('⚠️ Clean up expired targets from active list?')) return;
+            
+            showToast('Cleaning up expired targets...', 'info');
+            
+            fetch('/api/cleanup/expired-targets', { method: 'POST' })
+                .then(r => r.json())
+                .then(d => {
+                    if (d.success) {
+                        showToast(`✅ ${d.message}`, 'success');
+                        refreshStatus();
+                    } else {
+                        showToast(`❌ ${d.message}`, 'error');
+                    }
+                })
+                .catch(() => showToast('❌ Cleanup failed', 'error'));
+        }
+
+        function removeSquadLeader(uid) {
+            if (!confirm(`⚠️ Remove squad leader ${uid} from squad_data.json?`)) return;
+            
+            fetch(`/api/squad-leaders/remove/${uid}`, { method: 'POST' })
+                .then(r => r.json())
+                .then(d => {
+                    if (d.success) {
+                        showToast(`✅ ${d.message}`, 'success');
+                        refreshSquadLeaders();
+                        refreshStatus();
+                    } else {
+                        showToast(`❌ ${d.message}`, 'error');
+                    }
+                })
+                .catch(() => showToast('❌ Failed to remove', 'error'));
+        }
 
         function resetAccounts() {
             if (!confirm('⚠️ Reset all accounts? This will disconnect and reconnect all bots.')) return;
@@ -3312,7 +3790,7 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
                 .catch(() => {});
         }
 
-        function uploadFile(file) {
+        function uploadFileOld(file) {
             const fd = new FormData(); fd.append('file', file);
             fetch('/api/upload/accs', { method: 'POST', body: fd })
                 .then(r => r.json())
@@ -3327,12 +3805,12 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
         }
 
         document.getElementById('accsUpload').addEventListener('click', () => document.getElementById('accsFileInput').click());
-        document.getElementById('accsFileInput').addEventListener('change', function(e) { if (this.files.length) uploadFile(this.files[0]); });
+        document.getElementById('accsFileInput').addEventListener('change', function(e) { if (this.files.length) uploadFileOld(this.files[0]); });
 
         const uploadEl = document.getElementById('accsUpload');
         uploadEl.addEventListener('dragover', e => { e.preventDefault(); uploadEl.classList.add('dragover'); });
         uploadEl.addEventListener('dragleave', () => uploadEl.classList.remove('dragover'));
-        uploadEl.addEventListener('drop', e => { e.preventDefault(); uploadEl.classList.remove('dragover'); const files = e.dataTransfer.files; if (files.length) uploadFile(files[0]); });
+        uploadEl.addEventListener('drop', e => { e.preventDefault(); uploadEl.classList.remove('dragover'); const files = e.dataTransfer.files; if (files.length) uploadFileOld(files[0]); });
 
         function startSpam() {
             const uid = document.getElementById('spamUid').value.trim();
@@ -3412,6 +3890,7 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
         // Initial refresh
         setInterval(refreshStatus, 5000);
         refreshStatus();
+        refreshSquadLeaders();
         document.getElementById('spamUid').addEventListener('keypress', e => { if (e.key === 'Enter') startSpam(); });
         document.getElementById('stopUid').addEventListener('keypress', e => { if (e.key === 'Enter') stopSingleSpam(); });
     </script>
