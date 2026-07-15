@@ -803,7 +803,7 @@ def create_change_squad_size_packet(key, iv, target_uid, region="BD"):
         return None
 
 # ==================== SPAM WORKER FUNCTIONS ====================
-def send_room_badge_spam(client, target_uid):
+def send_room_badge_spam(client, target_uid, badge_value):
     total_sent = 0
     
     try:
@@ -828,25 +828,24 @@ def send_room_badge_spam(client, target_uid):
         except:
             pass
 
-        for badge_name, badge_value in BADGES.items():
-            try:
-                badge_pkt = create_badge_join_packet(client.key, client.iv, target_uid, badge_value)
-                if badge_pkt:
-                    try:
-                        client.CliEnts2.send(badge_pkt)
-                        total_sent += 1
-                        time.sleep(0.03)
-                    except:
-                        pass
-            except:
-                pass
+        # লুপ সরিয়ে দেওয়া হয়েছে, এখন সরাসরি badge_value ব্যবহার করবে
+        try:
+            badge_pkt = create_badge_join_packet(client.key, client.iv, target_uid, badge_value)
+            if badge_pkt:
+                try:
+                    client.CliEnts2.send(badge_pkt)
+                    total_sent += 1
+                except:
+                    pass
+        except:
+            pass
                 
     except Exception as e:
         pass
     
     return total_sent
 
-def send_group_badge_spam(client, target_uid):
+def send_group_badge_spam(client, target_uid, badge_value):
     total_sent = 0
     
     try:
@@ -880,18 +879,17 @@ def send_group_badge_spam(client, target_uid):
             except:
                 pass
         
-        for badge_name, badge_value in BADGES.items():
-            try:
-                badge_pkt = create_badge_join_packet(client.key, client.iv, target_uid, badge_value)
-                if badge_pkt:
-                    try:
-                        client.CliEnts2.send(badge_pkt)
-                        total_sent += 1
-                        time.sleep(0.03)
-                    except:
-                        pass
-            except:
-                pass
+        # লুপ সরিয়ে দেওয়া হয়েছে, এখন সরাসরি badge_value ব্যবহার করবে
+        try:
+            badge_pkt = create_badge_join_packet(client.key, client.iv, target_uid, badge_value)
+            if badge_pkt:
+                try:
+                    client.CliEnts2.send(badge_pkt)
+                    total_sent += 1
+                except:
+                    pass
+        except:
+            pass
                 
     except Exception as e:
         pass
@@ -1067,6 +1065,9 @@ def spam_worker(target_uid, spam_type='full'):
     total_requests = 0
     round_number = 0
     is_spamming = True
+    
+    # ব্যাজ ভ্যালুগুলোকে একটি লিস্টে নিয়ে আসা
+    badge_vals = list(BADGES.values())
 
     while True:
         with active_spam_lock:
@@ -1097,18 +1098,24 @@ def spam_worker(target_uid, spam_type='full'):
 
         round_number += 1
 
-        for client in clients_list:
+        # enumerate ব্যবহার করে ইনডেক্স (i) বের করা হয়েছে
+        for i, client in enumerate(clients_list):
             with active_spam_lock:
                 if target_uid not in active_spam_targets:
                     break
 
             try:
+                # ইনডেক্স অনুযায়ী প্রতিটি বোটকে আলাদা ব্যাজ দেওয়া হচ্ছে
+                assigned_badge = badge_vals[i % len(badge_vals)]
+                
                 is_group_account = getattr(client, 'is_group_account', False)
                 
                 if is_group_account:
-                    total_requests += send_group_badge_spam(client, target_uid)
+                    # সংশোধিত ফাংশন কল (badge_value সহ)
+                    total_requests += send_group_badge_spam(client, target_uid, assigned_badge)
                 else:
-                    total_requests += send_room_badge_spam(client, target_uid)
+                    # সংশোধিত ফাংশন কল (badge_value সহ)
+                    total_requests += send_room_badge_spam(client, target_uid, assigned_badge)
             except Exception as e:
                 pass
 
