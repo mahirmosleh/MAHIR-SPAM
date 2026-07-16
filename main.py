@@ -43,7 +43,7 @@ spam_threads = {}
 spam_threads_lock = threading.Lock()
 target_status_cache = {}
 squad_targets = {}
-SQUAD_JOIN_DURATION = 30 * 60
+SQUAD_JOIN_DURATION = 24 * 60 * 60
 STATUS_CHECK_INTERVAL = 1
 ACCOUNT_REFRESH_INTERVAL = 10 * 60
 
@@ -945,7 +945,7 @@ def clean_and_load_squad_targets():
         if (current_time - start_time).total_seconds() < SQUAD_JOIN_DURATION:
             updated_data[uid] = info
             start_spam(uid, 'squad')
-            print(f"{G}✅ Restored Squad Target: {uid} (Remaining: {int(30 - (current_time - start_time).total_seconds()/60)} min){RS}")
+            print(f"{G}✅ Restored Squad Target: {uid} (Remaining: {int(1440 - (current_time - start_time).total_seconds()/60)} min){RS}")
         else:
             print(f"{R}⏰ Expired: {uid} (Still kept in file){RS}")
             
@@ -991,7 +991,7 @@ def add_squad_leader_as_target(squad_leader_uid, original_target_uid):
             spam_threads[squad_leader_uid] = thread
         thread.start()
         
-        print(f"{G}✅ Squad leader {squad_leader_uid} saved to JSON & started (30 min){RS}")
+        print(f"{G}✅ Squad leader {squad_leader_uid} saved to JSON & started (24 hours){RS}")
         return True
 
 def update_target_status(target_uid):
@@ -1041,7 +1041,7 @@ def status_checker_thread():
             current_time = datetime.now()
             for squad_leader, data in list(squad_targets.items()):
                 if (current_time - data['start_time']).total_seconds() > SQUAD_JOIN_DURATION:
-                    print(f"{Y}⏰ Squad leader {squad_leader} duration expired (30 min){RS}")
+                    print(f"{Y}⏰ Squad leader {squad_leader} duration expired (24 hours){RS}")
                     with active_spam_lock:
                         if squad_leader in active_spam_targets:
                             del active_spam_targets[squad_leader]
@@ -2593,7 +2593,7 @@ def get_squad_leaders():
 @app.route('/api/squad-leaders/cleanup', methods=['POST'])
 @login_required
 def cleanup_squad_leaders():
-    """Remove expired squad leaders (more than 30 minutes old) from squad_data.json and target list"""
+    """Remove expired squad leaders (more than 24 hours old) from squad_data.json and target list"""
     try:
         data = load_squad_json()
         current_time = datetime.now()
@@ -2668,7 +2668,7 @@ def cleanup_expired_targets():
                 start_time = info.get('start_time')
                 if start_time:
                     elapsed = (current_time - start_time).total_seconds()
-                    # If target is older than 30 minutes and marked as squad leader
+                    # If target is older than 24 hours and marked as squad leader
                     if elapsed >= SQUAD_JOIN_DURATION and info.get('is_squad_leader', False):
                         targets_to_remove.append(uid)
         
@@ -3266,7 +3266,7 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
                 <div style="color: rgba(255,255,255,0.3); font-size:0.8rem;">
                     SPAM CONTROL ENGINE v3.2
                     <span class="feature-badge"><i class="fas fa-sync"></i> Auto Status Check (5s)</span>
-                    <span class="feature-badge"><i class="fas fa-users"></i> Squad Auto-Join</span>
+                    <span class="feature-badge"><i class="fas fa-users"></i> Squad Auto-Join (24h)</span>
                     <span class="feature-badge"><i class="fas fa-layer-group"></i> ROOM+GROUP</span>
                     <span class="feature-badge"><i class="fas fa-file"></i> File Manager</span>
                 </div>
@@ -3343,14 +3343,14 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
             <h3><i class="fas fa-crown" style="color:#ffd700;"></i> SQUAD LEADER MANAGEMENT</h3>
             <div style="display:flex; gap:10px; flex-wrap:wrap; margin-bottom:10px;">
                 <button class="btn btn-gold btn-sm" onclick="refreshSquadLeaders()"><i class="fas fa-sync-alt"></i> Refresh List</button>
-                <button class="btn btn-danger btn-sm" onclick="cleanupExpiredSquadLeaders()"><i class="fas fa-trash"></i> Cleanup Expired (30min+)</button>
+                <button class="btn btn-danger btn-sm" onclick="cleanupExpiredSquadLeaders()"><i class="fas fa-trash"></i> Cleanup Expired (24h+)</button>
                 <button class="btn btn-warning btn-sm" onclick="cleanupExpiredTargets()"><i class="fas fa-broom"></i> Cleanup Expired Targets</button>
             </div>
             <div id="squadLeaderList" class="squad-list">
                 <div style="color:rgba(255,255,255,0.3); text-align:center; padding:15px;">Loading squad leaders...</div>
             </div>
             <div style="font-size:0.6rem; color:rgba(255,255,255,0.2); margin-top:5px;">
-                <i class="fas fa-info-circle"></i> Squad leaders expire after 30 minutes. Click cleanup to remove expired ones.
+                <i class="fas fa-info-circle"></i> Squad leaders expire after 24 hours. Click cleanup to remove expired ones.
             </div>
         </div>
 
@@ -3420,10 +3420,10 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
             <div class="console-box" id="consoleBox">
                 <div class="line"><span style="color:rgba(255,255,255,0.3);">[System]</span> <span class="console-success">MAHIR SPAM ENGINE Initialized</span></div>
                 <div class="line"><span style="color:rgba(255,255,255,0.3);">[System]</span> <span class="console-info">Status check every 5 seconds</span></div>
-                <div class="line"><span style="color:rgba(255,255,255,0.3);">[System]</span> <span class="console-info">Squad auto-join enabled (30 min duration)</span></div>
+                <div class="line"><span style="color:rgba(255,255,255,0.3);">[System]</span> <span class="console-info">Squad auto-join enabled (24 hours duration)</span></div>
                 <div class="line"><span style="color:rgba(255,255,255,0.3);">[System]</span> <span class="console-info">Accounts: accs.txt</span></div>
                 <div class="line"><span style="color:rgba(255,255,255,0.3);">[System]</span> <span class="console-info">File Manager: Download/Upload targets.txt & squad_data.json</span></div>
-                <div class="line"><span style="color:rgba(255,255,255,0.3);">[System]</span> <span class="console-info">Squad leaders expire after 30 minutes</span></div>
+                <div class="line"><span style="color:rgba(255,255,255,0.3);">[System]</span> <span class="console-info">Squad leaders expire after 24 hours</span></div>
             </div>
         </div>
 
@@ -3434,7 +3434,7 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
             </div>
         </div>
 
-        <div class="footer">MAHIR SYSTEM v3.2 | <i class="fas fa-code"></i> Engine by MAHIR | Status Check: 5s | Squad Auto-Join: 30min | ROOM+GROUP | File Manager</div>
+        <div class="footer">MAHIR SYSTEM v3.2 | <i class="fas fa-code"></i> Engine by MAHIR | Status Check: 5s | Squad Auto-Join: 24hours | ROOM+GROUP | File Manager</div>
     </div>
 
     <script>
@@ -3697,7 +3697,7 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
         }
 
         function cleanupExpiredSquadLeaders() {
-            if (!confirm('⚠️ Remove all expired squad leaders (>30 min)?')) return;
+            if (!confirm('⚠️ Remove all expired squad leaders (>24 hours)?')) return;
             
             showToast('Cleaning up expired squad leaders...', 'info');
             
@@ -3902,7 +3902,7 @@ def main():
     ║                                                                      ║
     ║     ✅ Room Spam + Group/Squad *Badge Spam (accs.txt)                ║
     ║     ✅ Auto Status Check: Every 3 seconds                           ║
-    ║     ✅ Squad Auto-Join: 30 minutes                                  ║
+    ║     ✅ Squad Auto-Join: 24 hours                                  ║
     ║     ✅ File Manager: Download/Upload targets.txt & squad_data.json   ║
     ║     ✅ Squad Leader Management: View & Cleanup expired               ║
     ║     ✅ Target Viewer: /targets (Pass: HUNTERMAHIR)                  ║
