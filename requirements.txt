@@ -1,41 +1,14 @@
-# ==================== CORE REQUIREMENTS ====================
-Flask==2.3.3
-requests==2.31.0
-urllib3==2.0.7
-aiohttp==3.9.1
-asyncio==3.4.3
-threading==0.1.0
-
-# ==================== SECURITY & ENCRYPTION ====================
-pycryptodome==3.19.0
-cryptography==41.0.7
-jwt==1.3.1
-PyJWT==2.8.0
-
-# ==================== PROTOCOL BUFFERS ====================
-protobuf==4.25.1
-protobuf-decoder==1.0.0
-
-# ==================== IMAGE PROCESSING ====================
-Pillow==10.1.0
-
-# ==================== GOOGLE PLAY SCRAPER ====================
-google-play-scraper==1.2.7
-
-# ==================== SYSTEM & UTILITIES ====================
-psutil==5.9.6
-python-dotenv==1.0.0
-
-# ==================== NETWORK & SSL ====================
-certifi==2023.11.17
-chardet==5.2.0
-idna==3.6
-six==1.16.0
-
-# ==================== ADDITIONAL DEPENDENCIES ====================
-# For better performance
-uvloop==0.19.0  # Optional: Better asyncio performance
-aiodns==3.1.1   # Optional: Faster DNS resolution
-
-# For development
-# flask-cors==4.0.0  # Uncomment if you need CORS support
+aiohttp
+flask
+google-play-scraper
+gunicorn
+httpx
+protobuf
+protobuf-decoder
+psutil
+pycryptodome
+PyJWT
+python-cfonts
+pytz
+requests
+urllib3
