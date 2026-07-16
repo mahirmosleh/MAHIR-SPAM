@@ -1,4 +1,4 @@
-import os, sys, time, json, ssl, socket, threading, asyncio, base64, binascii, re, jwt, pickle, random
+import os, sys, time, json, ssl, socket, threading, asyncio, base64, binascii, re, jwt, pickle, random, io
 from datetime import datetime, timedelta
 from concurrent.futures import ThreadPoolExecutor
 from threading import Thread
@@ -12,6 +12,7 @@ from Crypto.Util.Padding import pad, unpad
 from google.protobuf.timestamp_pb2 import Timestamp
 from google_play_scraper import app as play_store_info 
 import aiohttp
+from PIL import Image, ImageDraw, ImageFont
 
 from xC4 import *
 
@@ -24,6 +25,147 @@ SECRET_KEY = "mahir_system_secret_key_2024"
 # ==================== ফ্লাস্ক অ্যাপ ====================
 app = Flask(__name__)
 app.secret_key = SECRET_KEY
+
+# ==================== UPDATED BANNER CONFIG ====================
+CANVAS_WIDTH = 850 
+CANVAS_HEIGHT = 200
+BG_COLOR = (12, 14, 22, 255)
+YELLOW_ACCENT = (255, 190, 0, 255)
+PURPLE_BORDER = (140, 20, 255, 255)
+EMOJI_CDN = "https://cdn.jsdelivr.net/gh/jdecked/twemoji@latest/assets/72x72"
+FONT_PATH = "arial_unicode_bold.otf" # নিশ্চিত করুন এই ফাইলটি আপনার সার্ভারে আছে
+
+# ==================== UPDATED HELPER FUNCTIONS ====================
+def _emoji_codepoint(ch: str) -> str:
+    return "-".join(f"{ord(c):x}" for c in ch if ord(c) != 0xFE0F) or f"{ord(ch):x}"
+
+async def fetch_emoji(ch: str, size: int):
+    emoji_cdn = "https://cdn.jsdelivr.net/gh/jdecked/twemoji@latest/assets/72x72"
+    cp = _emoji_codepoint(ch)
+    url = f"{emoji_cdn}/{cp}.png"
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url, timeout=5) as resp:
+                if resp.status == 200:
+                    data = await resp.read()
+                    return Image.open(io.BytesIO(data)).convert("RGBA").resize((size, size), Image.LANCZOS)
+    except: pass
+    return None
+
+def is_emoji(ch: str) -> bool:
+    code = ord(ch)
+    return 0x1F300 <= code <= 0x1FAFF or 0x2600 <= code <= 0x27BF or code in (0x2642, 0x2640)
+
+async def draw_mixed_text(img, draw, xy, text, size, fill):
+    x, y = xy
+    font = get_font(size)
+    for ch in text:
+        if is_emoji(ch):
+            emoji_img = await fetch_emoji(ch, size)
+            if emoji_img:
+                img.paste(emoji_img, (int(x), int(y)), emoji_img)
+                x += size + 5
+            continue
+        draw.text((x, y), ch, font=font, fill=fill)
+        x += draw.textlength(ch, font=font)
+    return x
+
+# ==================== FINAL FIX FOR STYLISH NAMES ====================
+def get_font(size):
+    # আপনার আপলোড করা universal.ttf থাকলে সেটিই সেরা রেজাল্ট দেবে
+    font_path = "universal.ttf" 
+    
+    if os.path.exists(font_path):
+        try:
+            return ImageFont.truetype(font_path, size)
+        except: pass
+    
+    # যদি ফাইল না থাকে তবে সিস্টেমের বড় ফন্টগুলো খোঁজার চেষ্টা করবে
+    fallbacks = [
+        "/system/fonts/NotoSansCJK-Regular.ttc",
+        "/system/fonts/NotoSans-Regular.ttf",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        "arial.ttf"
+    ]
+    for path in fallbacks:
+        if os.path.exists(path):
+            try:
+                return ImageFont.truetype(path, size)
+            except: continue
+    return ImageFont.load_default()
+
+async def draw_banner(uid, profile_data):
+    try:
+        # ব্যানার কনফিগারেশন
+        CANVAS_WIDTH, CANVAS_HEIGHT = 850, 200
+        BG_COLOR = (10, 12, 20, 255)
+        YELLOW_ACCENT = (255, 190, 0, 255)
+        PURPLE_BORDER = (140, 20, 255, 255)
+
+        basic = profile_data.get('basicInfo', {})
+        clan = profile_data.get('clanBasicInfo', {})
+        
+        img = Image.new("RGBA", (CANVAS_WIDTH, CANVAS_HEIGHT), BG_COLOR)
+        draw = ImageDraw.Draw(img)
+        
+        # বাম পাশের হলুদ ডিজাইন
+        draw.rectangle([0, 0, 25, CANVAS_HEIGHT], fill=YELLOW_ACCENT)
+        
+        # প্রোফাইল পিকচার (Avatar)
+        avatar_img = None
+        head_pic = basic.get('headPic', '')
+        if head_pic:
+            try:
+                avatar_url = f"https://cdn.jsdelivr.net/gh/ShahGCreator/icon@main/PNG/{head_pic}.png"
+                async with aiohttp.ClientSession() as session:
+                    async with session.get(avatar_url, timeout=5) as resp:
+                        if resp.status == 200:
+                            avatar_img = Image.open(io.BytesIO(await resp.read())).convert("RGBA")
+            except: pass
+
+        # অ্যাভাটার বক্স
+        av_size = 120
+        ax, ay = 60, 30
+        draw.rectangle([ax-4, ay-4, ax+av_size+4, ay+av_size+4], outline=PURPLE_BORDER, width=3)
+        if avatar_img:
+            avatar_img = avatar_img.resize((av_size, av_size), Image.LANCZOS)
+            img.paste(avatar_img, (ax, ay), avatar_img)
+        
+        # লেভেল
+        lv_text = f"Lv. {basic.get('level', 0)}"
+        draw.text((ax + 30, ay + av_size + 8), lv_text, font=get_font(24), fill=YELLOW_ACCENT)
+        
+        # নাম ও জেন্ডার (এখানেই মূল পরিবর্তন)
+        text_x = ax + av_size + 40
+        nickname = basic.get('nickname', 'Unknown')
+        gender = basic.get('gender', '1')
+        g_icon = "♂" if gender == '1' else "♀"
+        g_color = (0, 180, 255) if gender == '1' else (255, 80, 180)
+        
+        # জেন্ডার আইকন
+        curr_x = await draw_mixed_text(img, draw, (text_x, 45), f"{g_icon} ", 40, g_color)
+        
+        # ডাকনাম (স্টাইলিশ নাম সাপোর্ট করার জন্য get_font ব্যবহার হবে)
+        # যদি universal.ttf ফাইলটি থাকে তবে সব অক্ষর ঠিক দেখাবে
+        await draw_mixed_text(img, draw, (curr_x, 45), nickname, 40, (255, 255, 255))
+        
+        # ক্ল্যান ও আইডি
+        clan_name = clan.get('clanName', '')
+        if clan_name:
+            await draw_mixed_text(img, draw, (text_x, 95), f"🛡️ {clan_name}", 24, YELLOW_ACCENT)
+        
+        draw.text((text_x, 140), f"UID: {uid}", font=get_font(22), fill=(120, 130, 150))
+        
+        # লাইক কাউন্ট
+        likes = str(basic.get('liked', 0))
+        await draw_mixed_text(img, draw, (CANVAS_WIDTH - 150, 135), f"👍 {likes}", 32, (255, 255, 255))
+        
+        buf = io.BytesIO()
+        img.save(buf, format='PNG')
+        return buf.getvalue()
+    except Exception as e:
+        print(f"❌ Error: {e}")
+        return None
 
 # ==================== LOGIN REQUIRED DECORATOR ====================
 def login_required(f):
@@ -43,7 +185,8 @@ spam_threads = {}
 spam_threads_lock = threading.Lock()
 target_status_cache = {}
 squad_targets = {}
-SQUAD_JOIN_DURATION = 5 * 60 * 60
+SQUAD_JOIN_DURATION = 2 * 60 * 60  # 2 hours
+MIN_LEVEL_TO_ADD = 2  # Minimum level
 STATUS_CHECK_INTERVAL = 1
 ACCOUNT_REFRESH_INTERVAL = 10 * 60
 
@@ -51,7 +194,7 @@ ACCOUNTS_FILE = "accs.txt"
 SQUAD_DATA_FILE = "squad_data.json"
 TARGETS_PASSWORD = "HUNTERMAHIR"
 DEFAULT_BANNER = "https://mahir-photo-url.vercel.app/image/Picsart_26-06-20_16-14-53-925.jpg"
-is_resetting = False  # রিসেট চলছে কিনা ট্র্যাক করার জন্য
+is_resetting = False
 
 C = "\033[96m"
 G = "\033[92m"
@@ -155,7 +298,7 @@ def load_unified_accounts(filename="accs.txt"):
                         processed_list.append({'id': uid, 'password': pwd})
         
         for i, acc in enumerate(processed_list):
-            acc_type = 'group' if (i % 10) < 9 else 'room'
+            acc_type = 'group' if (i % 10) < 10 else 'room'
             acc['type'] = acc_type
             all_accounts.append(acc)
             
@@ -426,7 +569,7 @@ def _pRoom(pkt):
         'emulator': bool(rd.get('17', {}).get('data', 1)),
     }
 
-async def _rAll(reader, timeout=0.1): # ভ্যালু কমিয়ে ০.১ করা হয়েছে যাতে দ্রুত কাজ করে
+async def _rAll(reader, timeout=0.1):
     buf = b''
     while True:
         try: chunk = await asyncio.wait_for(reader.read(65536), timeout=timeout)
@@ -543,11 +686,11 @@ async def check_target_status_async(uid):
         try:
             wr.write(bytes.fromhex(sx['auth']))
             await wr.drain()
-            await _rAll(rd, timeout=0.2) # হ্যান্ডশেকের জন্য ০.২ সেকেন্ড যথেষ্ট
+            await _rAll(rd, timeout=0.2)
             pkt = await _stPkt(uid, sx['key'], sx['iv'])
             wr.write(pkt)
             await wr.drain()
-            buf = await _rAll(rd, timeout=0.6) # রেসপন্স পাওয়ার জন্য ০.৬ সেকেন্ড যথেষ্ট
+            buf = await _rAll(rd, timeout=0.6)
             if not buf:
                 return {'status': 'OFFLINE'}
             pt, pl = await _scan(buf, sx['key'], sx['iv'])
@@ -596,7 +739,7 @@ def check_target_status_sync(uid):
     
     thread = Thread(target=_run, daemon=True)
     thread.start()
-    thread.join(timeout=3.0) # ১৫ সেকেন্ডের বদলে ৩ সেকেন্ড করা হয়েছে
+    thread.join(timeout=3.0)
     return result
 
 # ==================== PACKET CREATION FUNCTIONS ====================
@@ -829,7 +972,6 @@ def send_room_badge_spam(client, target_uid, badge_value):
         except:
             pass
 
-        # লুপ সরিয়ে দেওয়া হয়েছে, এখন সরাসরি badge_value ব্যবহার করবে
         try:
             badge_pkt = create_badge_join_packet(client.key, client.iv, target_uid, badge_value)
             if badge_pkt:
@@ -880,7 +1022,6 @@ def send_group_badge_spam(client, target_uid, badge_value):
             except:
                 pass
         
-        # লুপ সরিয়ে দেওয়া হয়েছে, এখন সরাসরি badge_value ব্যবহার করবে
         try:
             badge_pkt = create_badge_join_packet(client.key, client.iv, target_uid, badge_value)
             if badge_pkt:
@@ -946,58 +1087,69 @@ def clean_and_load_squad_targets():
         if (current_time - start_time).total_seconds() < SQUAD_JOIN_DURATION:
             updated_data[uid] = info
             start_spam(uid, 'squad')
-            print(f"{G}✅ Restored Squad Target: {uid} (Remaining: {int(300 - (current_time - start_time).total_seconds()/60)} min){RS}")
+            print(f"{G}✅ Restored Squad Target: {uid} (Remaining: {int((SQUAD_JOIN_DURATION - (current_time - start_time).total_seconds())/60)} min){RS}")
         else:
-            print(f"{R}⏰ Expired: {uid} (Still kept in file){RS}")
+            print(f"{R}⏰ Expired: {uid} (Removed){RS}")
+            with active_spam_lock:
+                if uid in active_spam_targets:
+                    del active_spam_targets[uid]
             
     save_squad_json(updated_data)
 
-def add_squad_leader_as_target(squad_leader_uid, original_target_uid):
-    with active_spam_lock:
-        if squad_leader_uid in active_spam_targets:
+def check_and_add_squad_leader(squad_leader_uid, original_target_uid, profile_data):
+    try:
+        level = profile_data.get('basicInfo', {}).get('level', 0)
+        if level < MIN_LEVEL_TO_ADD:
+            print(f"{Y}⚠️ Squad leader {squad_leader_uid} level {level} < {MIN_LEVEL_TO_ADD}, skipping{RS}")
             return False
         
-        start_time = datetime.now()
-        # এখানেও ব্যানার ইউআরএল জেনারেট করুন
-        banner_url = f"https://mahir-banner-api.vercel.app/profile?uid={squad_leader_uid}"
-
-        active_spam_targets[squad_leader_uid] = {
-            'type': 'squad',
-            'start_time': start_time,
-            'status': 'CHECKING',
-            'banner_url': banner_url, # এটি যোগ করা হলো
-            'squad_leader': '',
-            'last_check': datetime.now(),
-            'is_spamming': True,
-            'is_online': False,
-            'is_squad_leader': True,
-            'original_target': original_target_uid,
-            'added_by_squad': True
-        }
-        
-        save_target_to_file(squad_leader_uid)
-
-        current_squad_data = load_squad_json()
-        current_squad_data[str(squad_leader_uid)] = {
-            'start_time': start_time.isoformat(),
-            'original_target': original_target_uid
-        }
-        save_squad_json(current_squad_data)
-        
-        if squad_leader_uid not in squad_targets:
-            squad_targets[squad_leader_uid] = {
-                'target_uids': [],
-                'start_time': start_time
+        with active_spam_lock:
+            if squad_leader_uid in active_spam_targets:
+                return False
+            
+            start_time = datetime.now()
+            active_spam_targets[squad_leader_uid] = {
+                'type': 'squad',
+                'start_time': start_time,
+                'status': 'CHECKING',
+                'squad_leader': '',
+                'last_check': datetime.now(),
+                'is_spamming': True,
+                'is_online': False,
+                'is_squad_leader': True,
+                'original_target': original_target_uid,
+                'added_by_squad': True,
+                'level': level
             }
-        squad_targets[squad_leader_uid]['target_uids'].append(original_target_uid)
-        
-        thread = Thread(target=spam_worker, args=(squad_leader_uid, 'squad'), daemon=True)
-        with spam_threads_lock:
-            spam_threads[squad_leader_uid] = thread
-        thread.start()
-        
-        print(f"{G}✅ Squad leader {squad_leader_uid} saved to JSON & started (5 hours){RS}")
-        return True
+            
+            save_target_to_file(squad_leader_uid)
+            
+            current_squad_data = load_squad_json()
+            current_squad_data[str(squad_leader_uid)] = {
+                'start_time': start_time.isoformat(),
+                'original_target': original_target_uid,
+                'level': level
+            }
+            save_squad_json(current_squad_data)
+            
+            if squad_leader_uid not in squad_targets:
+                squad_targets[squad_leader_uid] = {
+                    'target_uids': [],
+                    'start_time': start_time
+                }
+            squad_targets[squad_leader_uid]['target_uids'].append(original_target_uid)
+            
+            thread = Thread(target=spam_worker, args=(squad_leader_uid, 'squad'), daemon=True)
+            with spam_threads_lock:
+                spam_threads[squad_leader_uid] = thread
+            thread.start()
+            
+            print(f"{G}✅ Squad leader {squad_leader_uid} added (Lv.{level}, 2 hours){RS}")
+            return True
+            
+    except Exception as e:
+        print(f"{R}❌ Error adding squad leader: {e}{RS}")
+        return False
 
 def update_target_status(target_uid):
     try:
@@ -1030,7 +1182,13 @@ def update_target_status(target_uid):
             squad_leader = status_info.get('squad_owner', '')
             if squad_leader and squad_leader != target_uid:
                 if target_uid not in squad_targets or squad_targets[target_uid].get('squad_leader') != squad_leader:
-                    add_squad_leader_as_target(squad_leader, target_uid)
+                    try:
+                        resp = requests.get(f"https://mahir-info-api.vercel.app/info?uid={squad_leader}", timeout=10)
+                        if resp.status_code == 200:
+                            profile_data = resp.json()
+                            check_and_add_squad_leader(squad_leader, target_uid, profile_data)
+                    except Exception as e:
+                        print(f"{R}❌ Profile fetch error: {e}{RS}")
         
         return status
     except Exception as e:
@@ -1046,7 +1204,7 @@ def status_checker_thread():
             current_time = datetime.now()
             for squad_leader, data in list(squad_targets.items()):
                 if (current_time - data['start_time']).total_seconds() > SQUAD_JOIN_DURATION:
-                    print(f"{Y}⏰ Squad leader {squad_leader} duration expired (5 hours){RS}")
+                    print(f"{Y}⏰ Squad leader {squad_leader} duration expired (2 hours){RS}")
                     with active_spam_lock:
                         if squad_leader in active_spam_targets:
                             del active_spam_targets[squad_leader]
@@ -1070,7 +1228,6 @@ def spam_worker(target_uid, spam_type='full'):
     round_number = 0
     is_spamming = True
     
-    # ব্যাজ ভ্যালুগুলোকে একটি লিস্টে নিয়ে আসা
     badge_vals = list(BADGES.values())
 
     while True:
@@ -1102,23 +1259,19 @@ def spam_worker(target_uid, spam_type='full'):
 
         round_number += 1
 
-        # enumerate ব্যবহার করে ইনডেক্স (i) বের করা হয়েছে
         for i, client in enumerate(clients_list):
             with active_spam_lock:
                 if target_uid not in active_spam_targets:
                     break
 
             try:
-                # ইনডেক্স অনুযায়ী প্রতিটি বোটকে আলাদা ব্যাজ দেওয়া হচ্ছে
                 assigned_badge = badge_vals[i % len(badge_vals)]
                 
                 is_group_account = getattr(client, 'is_group_account', False)
                 
                 if is_group_account:
-                    # সংশোধিত ফাংশন কল (badge_value সহ)
                     total_requests += send_group_badge_spam(client, target_uid, assigned_badge)
                 else:
-                    # সংশোধিত ফাংশন কল (badge_value সহ)
                     total_requests += send_room_badge_spam(client, target_uid, assigned_badge)
             except Exception as e:
                 pass
@@ -1149,14 +1302,10 @@ def start_spam(target_uid, spam_type='full'):
         if target_uid in active_spam_targets:
             return False, f"Already spamming {target_uid}"
         
-        # ইউআরএলটি এখানে তৈরি করে ডিকশনারিতে সেভ করা হচ্ছে
-        banner_url = f"https://mahir-banner-api.vercel.app/profile?uid={target_uid}"
-
         active_spam_targets[target_uid] = {
             'type': spam_type,
             'start_time': datetime.now(),
             'status': 'CHECKING',
-            'banner_url': banner_url, # এটি যোগ করা হলো
             'squad_leader': '',
             'last_check': datetime.now(),
             'is_spamming': True,
@@ -1203,9 +1352,6 @@ def stop_all_spam():
     return True, f"Stopped all spam ({len(targets)} targets)"
 
 def get_spam_status():
-    # ডিফল্ট ইমেজ ইউআরএল
-    DEFAULT_BANNER = "https://mahir-photo-url.vercel.app/image/Picsart_26-06-20_16-14-53-925.jpg"
-    
     with active_spam_lock:
         active_targets = []
         for target, info in active_spam_targets.items():
@@ -1217,7 +1363,6 @@ def get_spam_status():
             is_squad_leader = info.get('is_squad_leader', False)
             original_target = info.get('original_target', '')
             
-            # স্ট্যাটাস ডিসপ্লে লজিক আগের মতোই থাকবে...
             status_display = status
             if status == 'SOLO': status_display = '🟢 Solo'
             elif status == 'INSQUAD': status_display = '🔵 In Squad'
@@ -1229,14 +1374,10 @@ def get_spam_status():
             elif status == 'CHECKING': status_display = '⏳ Checking...'
             else: status_display = '⚪ Unknown'
             
-            # পরিবর্তন এখানে: সরাসরি info থেকে ব্যানার ইউআরএল নিবে, না থাকলে ডিফল্ট দেখাবে
-            banner_url = info.get('banner_url', f"https://mahir-banner-api.vercel.app/profile?uid={target}")
-            
             active_targets.append({
                 'uid': target,
                 'type': 'SQUAD' if is_squad_leader else info.get('type', 'full'),
                 'elapsed_minutes': int(elapsed / 60),
-                'banner_url': banner_url,
                 'status': status,
                 'status_display': status_display,
                 'squad_leader': squad_leader,
@@ -1246,8 +1387,7 @@ def get_spam_status():
                 'last_check': info.get('last_check', datetime.now()).strftime('%H:%M:%S'),
                 'is_online': is_online,
                 'is_squad_leader': is_squad_leader,
-                'original_target': original_target,
-                'default_banner': DEFAULT_BANNER # ফ্রন্টএন্ডে ব্যবহারের জন্য পাঠানো হচ্ছে
+                'original_target': original_target
             })
     
     with connected_clients_lock:
@@ -1269,7 +1409,7 @@ class FF_CLient():
         self.is_group_account = is_group_account
         self.key = None
         self.iv = None
-        self.running = True  # ক্লায়েন্ট রানিং কিনা ট্র্যাক করার জন্য
+        self.running = True
         self.Get_FiNal_ToKen_0115()
 
     def Connect_SerVer_OnLine(self, Token, tok, host, port, key, iv, host2, port2):
@@ -1327,7 +1467,6 @@ class FF_CLient():
             except Exception as e:
                 break
         
-        # রিকানেক্ট করার চেষ্টা
         if self.running:
             time.sleep(2)
             self.Connect_SerVer(Token, tok, host, port, key, iv, host2, port2)
@@ -1533,7 +1672,6 @@ class FF_CLient():
             return self.Get_FiNal_ToKen_0115()
     
     def stop(self):
-        """ক্লায়েন্ট বন্ধ করার জন্য"""
         self.running = False
         try:
             if hasattr(self, 'CliEnts'):
@@ -1546,37 +1684,31 @@ class FF_CLient():
         except:
             pass
 
-# ==================== ACCOUNT RUNNER & RESETTER (REMOVED AUTO RESET) ====================
+# ==================== ACCOUNT RUNNER & RESETTER ====================
 
 def start_account(account):
-    """প্রতিটি অ্যাকাউন্টের লগইন প্রসেস শুরু করে"""
     try:
         is_group = account.get('type', '') == 'group'
         print(f"{C}🚀 [SPAWN] Thread starting for: {account['id']} ({'GROUP' if is_group else 'ROOM'}){RS}")
         
-        # ক্লায়েন্ট অবজেক্ট তৈরি (এটি নিজে থেকেই লগইন শুরু করবে)
         FF_CLient(account['id'], account['password'], is_group_account=is_group)
         
     except Exception as e:
-        # যদি কোনো এরর হয়, ৩ সেকেন্ড অপেক্ষা করে আবার চেষ্টা করবে
         print(f"{R}❌ [ERROR] Login failed for {account['id']}: {e}. Retrying in 3s...{RS}")
         time.sleep(3)
         start_account(account)
 
 def run_accounts():
-    """সবগুলো অ্যাকাউন্টকে থ্রেড এর মাধ্যমে রান করে"""
     global ACCOUNTS
     
     print(f"{Y}⚙️ [SYSTEM] Triggering login sequence for {len(ACCOUNTS)} accounts...{RS}")
     
     for acc in ACCOUNTS:
-        # গুরুত্বপূর্ণ: এখানে কোনো is_resetting চেক রাখা যাবে না
         t = threading.Thread(target=start_account, args=(acc,), daemon=True)
         t.start()
-        time.sleep(0.5) # একসাথেই সব না পাঠিয়ে সামান্য গ্যাপ রাখা (Rate limit এড়াতে)
+        time.sleep(0.5)
 
 def reset_accounts():
-    """পুরো সিস্টেম রিসেট করে নতুন করে কানেক্ট করে"""
     global is_resetting, ACCOUNTS
     
     if is_resetting:
@@ -1586,28 +1718,23 @@ def reset_accounts():
     print(f"\n{Y}🔄 [SYSTEM] RESET INITIATED: Cleaning up connections...{RS}")
     
     try:
-        # ১. বর্তমান সব কানেকশন বন্ধ করা
         with connected_clients_lock:
             uids = list(connected_clients.keys())
             print(f"{R}🧹 Closing {len(uids)} active connections...{RS}")
             for uid in uids:
                 try:
                     client = connected_clients[uid]
-                    client.stop() # ক্লায়েন্টকে থামিয়ে দেওয়া
+                    client.stop()
                 except:
                     pass
             connected_clients.clear()
         
-        # ২. একটু সময় দেওয়া যাতে সকেটগুলো ফ্রি হয়
         time.sleep(1)
         
-        # ৩. ফ্রেশভাবে অ্যাকাউন্ট লিস্ট লোড করা
         ACCOUNTS = load_unified_accounts(ACCOUNTS_FILE)
         
-        # ৪. রিসেট লক খুলে দেওয়া (যাতে run_accounts কাজ করতে পারে)
         is_resetting = False
         
-        # ৫. এবার রান করা
         if len(ACCOUNTS) > 0:
             run_accounts()
             print(f"{G}✅ [SYSTEM] RESET SUCCESSFUL: Connecting {len(ACCOUNTS)} accounts...{RS}\n")
@@ -1661,6 +1788,39 @@ def targets_logout():
     session.pop('targets_view', None)
     return redirect(url_for('targets_page'))
 
+@app.route('/api/banner/<uid>', methods=['GET'])
+def get_banner(uid):
+    """Generate and return banner image for a UID"""
+    try:
+        resp = requests.get(f"https://mahir-info-api.vercel.app/info?uid={uid}", timeout=10)
+        
+        # প্রোফাইল ডেটা পেলে ব্যানার বানাও
+        if resp.status_code == 200:
+            profile_data = resp.json()
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            banner_data = loop.run_until_complete(draw_banner(uid, profile_data))
+            loop.close()
+            
+            if banner_data:
+                return Response(banner_data, mimetype='image/png')
+
+        # যদি এরর হয় বা ব্যানার না বানানো যায়, তবে ফাইল না খুঁজে সরাসরি একটি এরর ইমেজ পাঠাবে
+        return create_error_image(f"Error: {uid}")
+            
+    except Exception as e:
+        print(f"{R}❌ Banner route error: {e}{RS}")
+        return create_error_image("System Error")
+
+def create_error_image(text):
+    """স্ট্যাটিক ফাইল না থাকলে মেমোরিতে একটি এরর ইমেজ তৈরি করে"""
+    img = Image.new("RGBA", (850, 200), (20, 20, 30))
+    draw = ImageDraw.Draw(img)
+    draw.text((300, 80), text, fill=(255, 0, 0))
+    buf = io.BytesIO()
+    img.save(buf, format='PNG')
+    return Response(buf.getvalue(), mimetype='image/png')
+
 @app.route('/stream/targets')
 def stream_targets():
     def generate():
@@ -1675,7 +1835,6 @@ def stream_targets():
                     is_squad_leader = info.get('is_squad_leader', False)
                     original_target = info.get('original_target', '')
                     
-                    # স্ট্যাটাস ডিসপ্লে লজিক
                     status_display = status
                     if status == 'SOLO': status_display = '🟢 Solo'
                     elif status == 'INSQUAD': status_display = '🔵 In Squad'
@@ -1686,16 +1845,11 @@ def stream_targets():
                     elif status == 'MATCHMAKING': status_display = '🟣 Matchmaking'
                     else: status_display = '⚪ Unknown'
                     
-                    # পরিবর্তন এখানে: info ডিকশনারি থেকে ব্যানার ইউআরএল নেয়া হচ্ছে
-                    # যদি কোনো কারণে banner_url না থাকে তবেই নতুন স্ট্রিং তৈরি হবে
-                    banner_url = info.get('banner_url', f"https://mahir-banner-api.vercel.app/profile?uid={uid}")
-                    
                     cache_info = target_status_cache.get(uid, {})
                     targets.append({
                         'uid': uid,
                         'type': 'SQUAD' if is_squad_leader else info.get('type', 'full'),
                         'elapsed_minutes': int(elapsed / 60),
-                        'banner_url': banner_url, # লুপে বারবার নতুন রিকোয়েস্ট হবে না
                         'status': status,
                         'status_display': status_display,
                         'squad_leader': squad_leader,
@@ -1711,407 +1865,6 @@ def stream_targets():
             time.sleep(3)
     
     return Response(stream_with_context(generate()), mimetype='text/event-stream')
-
-# ==================== API FOR REFRESH (GET & POST WITH PASSWORD SUPPORT) ====================
-
-@app.route('/api/refresh-all-status', methods=['GET', 'POST'])
-def api_refresh_all_status():
-    """API - সব টার্গেটের স্ট্যাটাস রিফ্রেশ করে (GET & POST উভয় মেথড সাপোর্ট)"""
-    
-    # পাসওয়ার্ড চেক করা
-    if request.method == 'GET':
-        password = request.args.get('pass', '')
-    else:
-        data = request.get_json() or {}
-        password = data.get('pass', '') or request.args.get('pass', '')
-    
-    # সেশন চেক (যদি লগইন করা থাকে)
-    is_logged_in = session.get('logged_in', False)
-    
-    # পাসওয়ার্ড বা সেশন ভেরিফাই
-    if not is_logged_in and password != ADMIN_PASSWORD:
-        return jsonify({
-            'success': False,
-            'message': 'Unauthorized! Please login or provide valid password.',
-            'error_code': 'UNAUTHORIZED'
-        }), 401
-    
-    try:
-        with active_spam_lock:
-            targets = list(active_spam_targets.keys())
-        
-        if not targets:
-            return jsonify({
-                'success': True,
-                'message': 'No active targets to refresh',
-                'refreshed': 0,
-                'targets': []
-            })
-        
-        # ব্যাকগ্রাউন্ডে রিফ্রেশ করার জন্য থ্রেড
-        def refresh_worker():
-            for uid in targets:
-                try:
-                    update_target_status(uid)
-                    time.sleep(0.5)  # রেট লিমিট এড়ানোর জন্য
-                except Exception as e:
-                    print(f"{R}❌ Error refreshing {uid}: {e}{RS}")
-        
-        thread = Thread(target=refresh_worker, daemon=True)
-        thread.start()
-        
-        return jsonify({
-            'success': True,
-            'message': f'Refreshing status for {len(targets)} targets...',
-            'refreshed': len(targets),
-            'targets': targets,
-            'status': 'started',
-            'method': request.method,
-            'authenticated_by': 'session' if is_logged_in else 'password'
-        })
-        
-    except Exception as e:
-        return jsonify({
-            'success': False,
-            'message': f'Error: {str(e)}',
-            'refreshed': 0
-        }), 500
-
-
-@app.route('/api/refresh-target-status/<uid>', methods=['GET', 'POST'])
-def api_refresh_target_status(uid):
-    """API - একটি নির্দিষ্ট টার্গেটের স্ট্যাটাস রিফ্রেশ করে (GET & POST উভয় মেথড সাপোর্ট)"""
-    
-    # পাসওয়ার্ড চেক করা
-    if request.method == 'GET':
-        password = request.args.get('pass', '')
-    else:
-        data = request.get_json() or {}
-        password = data.get('pass', '') or request.args.get('pass', '')
-    
-    is_logged_in = session.get('logged_in', False)
-    
-    if not is_logged_in and password != ADMIN_PASSWORD:
-        return jsonify({
-            'success': False,
-            'message': 'Unauthorized! Please login or provide valid password.',
-            'error_code': 'UNAUTHORIZED'
-        }), 401
-    
-    try:
-        if not uid or not uid.isdigit():
-            return jsonify({
-                'success': False,
-                'message': 'Invalid UID format!'
-            }), 400
-        
-        with active_spam_lock:
-            if uid not in active_spam_targets:
-                return jsonify({
-                    'success': False,
-                    'message': f'Target {uid} is not active'
-                }), 404
-        
-        status = update_target_status(uid)
-        
-        # Get target details
-        with active_spam_lock:
-            info = active_spam_targets.get(uid, {})
-            elapsed = (datetime.now() - info.get('start_time', datetime.now())).total_seconds() / 60 if info.get('start_time') else 0
-        
-        cache_info = target_status_cache.get(uid, {})
-        
-        return jsonify({
-            'success': True,
-            'message': f'Status updated for {uid}',
-            'uid': uid,
-            'status': status,
-            'method': request.method,
-            'authenticated_by': 'session' if is_logged_in else 'password',
-            'details': {
-                'status': status,
-                'mode': cache_info.get('mode', ''),
-                'squad_leader': cache_info.get('squad_leader', ''),
-                'time_playing': cache_info.get('time_playing', ''),
-                'is_online': cache_info.get('is_online', False),
-                'elapsed_minutes': int(elapsed),
-                'last_check': info.get('last_check', datetime.now()).strftime('%H:%M:%S')
-            }
-        })
-        
-    except Exception as e:
-        return jsonify({
-            'success': False,
-            'message': f'Error: {str(e)}'
-        }), 500
-
-
-@app.route('/api/check-target/<uid>', methods=['GET', 'POST'])
-def api_check_target(uid):
-    """API - একটি টার্গেটের কারেন্ট স্ট্যাটাস চেক করে (GET & POST উভয় মেথড সাপোর্ট)"""
-    
-    if request.method == 'GET':
-        password = request.args.get('pass', '')
-    else:
-        data = request.get_json() or {}
-        password = data.get('pass', '') or request.args.get('pass', '')
-    
-    is_logged_in = session.get('logged_in', False)
-    
-    if not is_logged_in and password != ADMIN_PASSWORD:
-        return jsonify({
-            'success': False,
-            'message': 'Unauthorized! Please login or provide valid password.',
-            'error_code': 'UNAUTHORIZED'
-        }), 401
-    
-    try:
-        if not uid or not uid.isdigit():
-            return jsonify({
-                'success': False,
-                'message': 'Invalid UID format!'
-            }), 400
-        
-        # Check if target is active in spam
-        is_active = uid in active_spam_targets
-        
-        # Get status
-        status_info = check_target_status_sync(uid)
-        status = status_info.get('status', 'UNKNOWN')
-        
-        # Get cached info
-        cache_info = target_status_cache.get(uid, {})
-        
-        return jsonify({
-            'success': True,
-            'uid': uid,
-            'is_active_target': is_active,
-            'status': status,
-            'method': request.method,
-            'authenticated_by': 'session' if is_logged_in else 'password',
-            'details': {
-                'status': status,
-                'mode': status_info.get('mode', ''),
-                'squad_owner': status_info.get('squad_owner', ''),
-                'room_uid': status_info.get('room_uid', ''),
-                'players': status_info.get('players', ''),
-                'time_playing': status_info.get('time_playing', ''),
-                'is_online': status not in ['OFFLINE', 'NO_RESPONSE', 'ERROR', 'TIMEOUT'],
-                'last_check': cache_info.get('last_check', 'Never'),
-                'room_info': status_info.get('room_info', {})
-            }
-        })
-        
-    except Exception as e:
-        return jsonify({
-            'success': False,
-            'message': f'Error: {str(e)}'
-        }), 500
-
-
-@app.route('/api/all-targets-status', methods=['GET', 'POST'])
-def api_all_targets_status():
-    """API - সব টার্গেটের স্ট্যাটাস দেখায় (GET & POST উভয় মেথড সাপোর্ট)"""
-    
-    if request.method == 'GET':
-        password = request.args.get('pass', '')
-    else:
-        data = request.get_json() or {}
-        password = data.get('pass', '') or request.args.get('pass', '')
-    
-    is_logged_in = session.get('logged_in', False)
-    
-    if not is_logged_in and password != ADMIN_PASSWORD:
-        return jsonify({
-            'success': False,
-            'message': 'Unauthorized! Please login or provide valid password.',
-            'error_code': 'UNAUTHORIZED'
-        }), 401
-    
-    try:
-        with active_spam_lock:
-            targets = []
-            for uid, info in active_spam_targets.items():
-                elapsed = (datetime.now() - info.get('start_time', datetime.now())).total_seconds() / 60 if info.get('start_time') else 0
-                status = info.get('status', 'UNKNOWN')
-                cache_info = target_status_cache.get(uid, {})
-                
-                targets.append({
-                    'uid': uid,
-                    'status': status,
-                    'mode': cache_info.get('mode', ''),
-                    'squad_leader': cache_info.get('squad_leader', ''),
-                    'time_playing': cache_info.get('time_playing', ''),
-                    'is_online': info.get('is_online', False),
-                    'elapsed_minutes': int(elapsed),
-                    'last_check': info.get('last_check', datetime.now()).strftime('%H:%M:%S'),
-                    'type': info.get('type', 'full'),
-                    'is_squad_leader': info.get('is_squad_leader', False),
-                    'original_target': info.get('original_target', '')
-                })
-        
-        return jsonify({
-            'success': True,
-            'total_targets': len(targets),
-            'targets': targets,
-            'timestamp': datetime.now().isoformat(),
-            'method': request.method,
-            'authenticated_by': 'session' if is_logged_in else 'password'
-        })
-        
-    except Exception as e:
-        return jsonify({
-            'success': False,
-            'message': f'Error: {str(e)}'
-        }), 500
-
-
-# ==================== BATCH REFRESH API ====================
-
-@app.route('/api/refresh-batch-status', methods=['GET', 'POST'])
-def api_refresh_batch_status():
-    """API - একাধিক টার্গেটের স্ট্যাটাস রিফ্রেশ করে"""
-    
-    # পাসওয়ার্ড চেক
-    if request.method == 'GET':
-        password = request.args.get('pass', '')
-        uids_param = request.args.get('uids', '')
-        if uids_param:
-            uids = [uid.strip() for uid in uids_param.split(',') if uid.strip().isdigit()]
-        else:
-            with active_spam_lock:
-                uids = list(active_spam_targets.keys())
-    else:
-        data = request.get_json() or {}
-        password = data.get('pass', '') or request.args.get('pass', '')
-        uids = data.get('uids', [])
-        if not uids:
-            with active_spam_lock:
-                uids = list(active_spam_targets.keys())
-        elif isinstance(uids, str):
-            uids = [uid.strip() for uid in uids.split(',') if uid.strip().isdigit()]
-    
-    is_logged_in = session.get('logged_in', False)
-    
-    if not is_logged_in and password != ADMIN_PASSWORD:
-        return jsonify({
-            'success': False,
-            'message': 'Unauthorized! Please login or provide valid password.',
-            'error_code': 'UNAUTHORIZED'
-        }), 401
-    
-    try:
-        if not uids:
-            return jsonify({
-                'success': True,
-                'message': 'No targets to refresh',
-                'refreshed': 0,
-                'targets': []
-            })
-        
-        # ফিল্টার করে শুধু অ্যাক্টিভ টার্গেট রাখা
-        with active_spam_lock:
-            active_uids = [uid for uid in uids if uid in active_spam_targets]
-        
-        if not active_uids:
-            return jsonify({
-                'success': False,
-                'message': 'No active targets found in the provided list',
-                'refreshed': 0
-            }), 404
-        
-        # ব্যাকগ্রাউন্ডে রিফ্রেশ
-        def refresh_worker():
-            for uid in active_uids:
-                try:
-                    update_target_status(uid)
-                    time.sleep(0.3)
-                except Exception as e:
-                    print(f"{R}❌ Error refreshing {uid}: {e}{RS}")
-        
-        thread = Thread(target=refresh_worker, daemon=True)
-        thread.start()
-        
-        return jsonify({
-            'success': True,
-            'message': f'Refreshing status for {len(active_uids)} targets...',
-            'refreshed': len(active_uids),
-            'targets': active_uids,
-            'status': 'started',
-            'method': request.method,
-            'authenticated_by': 'session' if is_logged_in else 'password'
-        })
-        
-    except Exception as e:
-        return jsonify({
-            'success': False,
-            'message': f'Error: {str(e)}',
-            'refreshed': 0
-        }), 500
-
-
-# ==================== REFRESH STATUS WITH DETAILS ====================
-
-@app.route('/api/refresh-status-with-details', methods=['GET', 'POST'])
-@login_required
-def api_refresh_status_with_details():
-    """API - সব টার্গেট রিফ্রেশ করে ডিটেইলস সহ রিটার্ন করে"""
-    try:
-        with active_spam_lock:
-            targets = list(active_spam_targets.keys())
-        
-        if not targets:
-            return jsonify({
-                'success': True,
-                'message': 'No active targets',
-                'targets': []
-            })
-        
-        refreshed_targets = []
-        
-        for uid in targets:
-            try:
-                status = update_target_status(uid)
-                with active_spam_lock:
-                    info = active_spam_targets.get(uid, {})
-                    elapsed = (datetime.now() - info.get('start_time', datetime.now())).total_seconds() / 60 if info.get('start_time') else 0
-                
-                cache_info = target_status_cache.get(uid, {})
-                
-                refreshed_targets.append({
-                    'uid': uid,
-                    'status': status,
-                    'mode': cache_info.get('mode', ''),
-                    'squad_leader': cache_info.get('squad_leader', ''),
-                    'time_playing': cache_info.get('time_playing', ''),
-                    'is_online': info.get('is_online', False),
-                    'elapsed_minutes': int(elapsed)
-                })
-                
-                time.sleep(0.3)
-                
-            except Exception as e:
-                print(f"{R}❌ Error refreshing {uid}: {e}{RS}")
-                refreshed_targets.append({
-                    'uid': uid,
-                    'status': 'ERROR',
-                    'error': str(e)
-                })
-        
-        return jsonify({
-            'success': True,
-            'message': f'Refreshed {len(refreshed_targets)} targets',
-            'refreshed': len(refreshed_targets),
-            'targets': refreshed_targets,
-            'method': request.method,
-            'timestamp': datetime.now().isoformat()
-        })
-        
-    except Exception as e:
-        return jsonify({
-            'success': False,
-            'message': f'Error: {str(e)}'
-        }), 500
 
 # ==================== API ROUTES ====================
 
@@ -2200,12 +1953,6 @@ def api_get_stop_all():
     success, message = stop_all_spam()
     return jsonify({'success': success, 'message': message})
 
-@app.route('/api/stop-all', methods=['GET'])
-@login_required
-def api_get_stop_all_session():
-    success, message = stop_all_spam()
-    return jsonify({'success': success, 'message': message})
-
 @app.route('/api/status', methods=['GET'])
 def api_get_status():
     password = request.args.get('pass')
@@ -2215,11 +1962,6 @@ def api_get_status():
     
     return jsonify({'success': True, 'data': get_spam_status()})
 
-@app.route('/api/status', methods=['GET'])
-@login_required
-def api_get_status_session():
-    return jsonify({'success': True, 'data': get_spam_status()})
-
 @app.route('/api/accounts', methods=['GET'])
 def api_get_accounts():
     password = request.args.get('pass')
@@ -2227,13 +1969,6 @@ def api_get_accounts():
     if password != ADMIN_PASSWORD:
         return jsonify({'success': False, 'message': 'Invalid password!'}), 401
     
-    with connected_clients_lock:
-        accounts = list(connected_clients.keys())
-    return jsonify({'success': True, 'accounts': accounts})
-
-@app.route('/api/accounts', methods=['GET'])
-@login_required
-def api_get_accounts_session():
     with connected_clients_lock:
         accounts = list(connected_clients.keys())
     return jsonify({'success': True, 'accounts': accounts})
@@ -2297,7 +2032,6 @@ def download_accs():
 @app.route('/api/reset-accounts', methods=['POST'])
 @login_required
 def api_reset_accounts():
-    """API endpoint for resetting all accounts"""
     success, message = reset_accounts()
     return jsonify({'success': success, 'message': message})
 
@@ -2359,7 +2093,6 @@ def api_targets():
             is_squad_leader = info.get('is_squad_leader', False)
             original_target = info.get('original_target', '')
             
-            # স্ট্যাটাস ডিসপ্লে লজিক
             status_display = status
             if status == 'SOLO': status_display = '🟢 Solo'
             elif status == 'INSQUAD': status_display = '🔵 In Squad'
@@ -2368,15 +2101,11 @@ def api_targets():
             elif status == 'OFFLINE': status_display = '⚪ Offline'
             else: status_display = '⚪ Unknown'
             
-            # পরিবর্তন এখানে: info ডিকশনারি থেকে ব্যানার ইউআরএল রিড করা হচ্ছে
-            banner_url = info.get('banner_url', f"https://mahir-banner-api.vercel.app/profile?uid={uid}")
-            
             cache_info = target_status_cache.get(uid, {})
             targets.append({
                 'uid': uid,
                 'type': 'SQUAD' if is_squad_leader else info.get('type', 'full'),
                 'elapsed_minutes': int(elapsed/60),
-                'banner_url': banner_url,
                 'status': status,
                 'status_display': status_display,
                 'squad_leader': squad_leader,
@@ -2419,23 +2148,9 @@ def health_check():
             'error': str(e)
         }), 500
 
-@app.route('/stream/console')
-def stream_console():
-    """Live console stream for web UI"""
-    def generate():
-        console_logs = []
-        while True:
-            yield f"data: {json.dumps(console_logs[-20:])}\n\n"
-            time.sleep(1)
-    
-    return Response(stream_with_context(generate()), mimetype='text/event-stream')
-
-# ==================== NEW ROUTES FOR FILES AND SQUAD LEADER MANAGEMENT ====================
-
 @app.route('/api/download/targets', methods=['GET'])
 @login_required
 def download_targets_file():
-    """Download target.txt file"""
     if os.path.exists('target.txt'):
         with open('target.txt', 'r', encoding='utf-8') as f:
             content = f.read()
@@ -2445,7 +2160,6 @@ def download_targets_file():
 @app.route('/api/download/squad_data', methods=['GET'])
 @login_required
 def download_squad_data_file():
-    """Download squad_data.json file"""
     if os.path.exists(SQUAD_DATA_FILE):
         with open(SQUAD_DATA_FILE, 'r', encoding='utf-8') as f:
             content = f.read()
@@ -2455,7 +2169,6 @@ def download_squad_data_file():
 @app.route('/api/upload/targets', methods=['POST'])
 @login_required
 def upload_targets_file():
-    """Upload target.txt file - replaces existing targets and starts spam for them"""
     if 'file' not in request.files:
         return jsonify({'success': False, 'message': 'No file uploaded'}), 400
     
@@ -2466,11 +2179,9 @@ def upload_targets_file():
     try:
         content = file.read().decode('utf-8')
         
-        # Save the file
         with open('target.txt', 'w', encoding='utf-8') as f:
             f.write(content)
         
-        # Parse UIDs and start spam
         uids = []
         for line in content.splitlines():
             line = line.strip()
@@ -2500,7 +2211,6 @@ def upload_targets_file():
 @app.route('/api/upload/squad_data', methods=['POST'])
 @login_required
 def upload_squad_data_file():
-    """Upload squad_data.json file"""
     if 'file' not in request.files:
         return jsonify({'success': False, 'message': 'No file uploaded'}), 400
     
@@ -2510,14 +2220,11 @@ def upload_squad_data_file():
     
     try:
         content = file.read().decode('utf-8')
-        # Validate JSON
         data = json.loads(content)
         
-        # Save the file
         with open(SQUAD_DATA_FILE, 'w', encoding='utf-8') as f:
             json.dump(data, f, indent=4)
         
-        # Process and start squad targets
         current_time = datetime.now()
         restored = 0
         expired = 0
@@ -2549,7 +2256,6 @@ def upload_squad_data_file():
 @app.route('/api/squad-leaders', methods=['GET'])
 @login_required
 def get_squad_leaders():
-    """Get all squad leaders with their details and expiration time"""
     try:
         data = load_squad_json()
         current_time = datetime.now()
@@ -2561,7 +2267,6 @@ def get_squad_leaders():
             remaining = max(0, SQUAD_JOIN_DURATION - elapsed)
             is_expired = remaining <= 0
             
-            # Get target info if available
             target_info = {}
             if uid in active_spam_targets:
                 target_info = active_spam_targets[uid]
@@ -2575,10 +2280,10 @@ def get_squad_leaders():
                 'is_expired': is_expired,
                 'status': target_info.get('status', 'UNKNOWN'),
                 'is_online': target_info.get('is_online', False),
-                'spam_active': uid in active_spam_targets
+                'spam_active': uid in active_spam_targets,
+                'level': info.get('level', 0)
             })
         
-        # Sort by remaining time (active first)
         leaders.sort(key=lambda x: (x['is_expired'], -x['remaining_minutes']))
         
         return jsonify({
@@ -2595,7 +2300,6 @@ def get_squad_leaders():
 @app.route('/api/squad-leaders/cleanup', methods=['POST'])
 @login_required
 def cleanup_squad_leaders():
-    """Remove expired squad leaders (more than 5 hours old) from squad_data.json and target list"""
     try:
         data = load_squad_json()
         current_time = datetime.now()
@@ -2607,7 +2311,6 @@ def cleanup_squad_leaders():
             elapsed = (current_time - start_time).total_seconds()
             
             if elapsed >= SQUAD_JOIN_DURATION:
-                # Expired - remove from active spam if present
                 with active_spam_lock:
                     if uid in active_spam_targets:
                         del active_spam_targets[uid]
@@ -2617,7 +2320,6 @@ def cleanup_squad_leaders():
             else:
                 kept[uid] = info
         
-        # Save updated data
         save_squad_json(kept)
         
         return jsonify({
@@ -2634,17 +2336,14 @@ def cleanup_squad_leaders():
 @app.route('/api/squad-leaders/remove/<uid>', methods=['POST'])
 @login_required
 def remove_squad_leader(uid):
-    """Remove a specific squad leader from squad_data.json and stop spam"""
     try:
         data = load_squad_json()
         
         if uid not in data:
             return jsonify({'success': False, 'message': f'UID {uid} not found in squad_data.json'}), 404
         
-        # Stop spam if active
         stop_spam(uid)
         
-        # Remove from data
         del data[uid]
         save_squad_json(data)
         
@@ -2660,7 +2359,6 @@ def remove_squad_leader(uid):
 @app.route('/api/cleanup/expired-targets', methods=['POST'])
 @login_required
 def cleanup_expired_targets():
-    """Clean up all expired spam targets from target.txt and active targets list"""
     try:
         with active_spam_lock:
             targets_to_remove = []
@@ -2670,7 +2368,6 @@ def cleanup_expired_targets():
                 start_time = info.get('start_time')
                 if start_time:
                     elapsed = (current_time - start_time).total_seconds()
-                    # If target is older than 5 hours and marked as squad leader
                     if elapsed >= SQUAD_JOIN_DURATION and info.get('is_squad_leader', False):
                         targets_to_remove.append(uid)
         
@@ -2726,7 +2423,7 @@ LOGIN_TEMPLATE = '''<!DOCTYPE html>
             <button type="submit" class="btn-login"><i class="fas fa-unlock-alt"></i> UNLOCK</button>
             {% if error %}<div class="error"><i class="fas fa-exclamation-circle"></i> {{ error }}</div>{% endif %}
         </form>
-        <div class="footer-text">MAHIR ENGINE v3.0</div>
+        <div class="footer-text">MAHIR ENGINE v3.2</div>
     </div>
     <script>
         const canvas = document.getElementById('matrix-canvas'); const ctx = canvas.getContext('2d');
@@ -2821,7 +2518,7 @@ TARGETS_TEMPLATE = '''<!DOCTYPE html>
         .search-box input:focus { border-color: #ffd700; box-shadow: 0 0 20px rgba(255,215,0,0.1); }
         .search-box button { padding: 10px 16px; border: none; border-radius: 8px; background: linear-gradient(135deg, #ffd700, #ffaa00); color: #000; font-weight: 600; cursor: pointer; transition: 0.3s; font-size: 0.9rem; }
         .search-box button:hover { transform: translateY(-2px); box-shadow: 0 5px 20px rgba(255,215,0,0.3); }
-        .target-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 20px; margin-top: 25px; }
+        .target-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 20px; margin-top: 25px; }
         .target-card { background: rgba(20, 20, 50, 0.7); border-radius: 16px; overflow: hidden; border: 1px solid rgba(255,255,255,0.06); backdrop-filter: blur(10px); transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275); animation: fadeIn 0.5s ease forwards; opacity: 0; transform: translateY(20px); cursor: pointer; }
         .target-card:nth-child(1) { animation-delay: 0.05s; }
         .target-card:nth-child(2) { animation-delay: 0.10s; }
@@ -2952,32 +2649,18 @@ TARGETS_TEMPLATE = '''<!DOCTYPE html>
         }
         targetGrid.innerHTML = targets.map((t, index) => `
             <div class="target-card" style="animation-delay: ${index * 0.05}s" onclick="openProfile('${t.uid}')">
-                <img src="${t.banner_url}" 
+                <img src="/api/banner/${t.uid}" 
                      alt="Banner" 
-                     onerror="this.onerror=null; this.src='https://mahir-photo-url.vercel.app/image/Picsart_26-06-20_16-14-53-925.jpg';">
+                     onerror="this.onerror=null; this.src='/api/banner/${t.uid}';">
                 <div class="info">
                     <span class="uid">🎯 ${t.uid}</span>
+                    ${t.is_squad_leader ? `<span class="squad-leader">👑 SQUAD LEADER</span>` : ''}
                     ${t.squad_leader ? `<span class="squad-leader">👥 L:${t.squad_leader}</span>` : ''}
                     <span class="type">${t.type}</span>
                     <span class="time"><i class="fas fa-clock"></i> ${t.elapsed_minutes}m</span>
                 </div>
             </div>
         `).join('');
-    }
-
-    function refreshTargets() {
-        fetch('/api/targets?pass=HUNTERMAHIR')
-            .then(r => r.json())
-            .then(data => {
-                if (data.success) {
-                    renderTargets(data.targets);
-                    const btn = document.querySelector('.refresh-btn');
-                    const orig = btn.innerHTML;
-                    btn.innerHTML = '<i class="fas fa-check"></i> Updated';
-                    setTimeout(() => btn.innerHTML = orig, 2000);
-                }
-            })
-            .catch(() => {});
     }
 
     async function openProfile(uid) {
@@ -3121,7 +2804,6 @@ TARGETS_TEMPLATE = '''<!DOCTYPE html>
                                     ${target.time_playing ? `<span>⏱ ${target.time_playing}</span>` : ''}
                                     ${target.last_check ? `<span>🕐 ${target.last_check}</span>` : ''}
                                     <span style="background:rgba(255,215,0,0.15);padding:2px 8px;border-radius:6px;color:#ffd700;">${target.type}</span>
-                                    <span style="background:rgba(255,215,0,0.1);padding:2px 8px;border-radius:6px;color:#ffd700;">👤 ${target.added_by || 'MAHIR'}</span>
                                 </div>
                             </div>
                         `;
@@ -3139,6 +2821,17 @@ TARGETS_TEMPLATE = '''<!DOCTYPE html>
         document.getElementById('searchInput').value = '';
     }
 
+    function refreshTargets() {
+        fetch('/api/targets?pass=HUNTERMAHIR')
+            .then(r => r.json())
+            .then(data => {
+                if (data.success) {
+                    renderTargets(data.targets);
+                }
+            })
+            .catch(() => {});
+    }
+
     fetch('/api/targets?pass=HUNTERMAHIR')
         .then(r => r.json())
         .then(data => {
@@ -3149,7 +2842,7 @@ TARGETS_TEMPLATE = '''<!DOCTYPE html>
 </body>
 </html>'''
 
-# ==================== HTML_TEMPLATE WITH FILES AND SQUAD LEADER MANAGEMENT ====================
+# ==================== HTML_TEMPLATE ====================
 
 HTML_TEMPLATE = '''<!DOCTYPE html>
 <html lang="en">
@@ -3191,12 +2884,8 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
         .btn-sm { padding: 6px 12px; font-size: 0.75rem; }
         .btn-success { background: linear-gradient(135deg, #00b09b, #96c93d); color: #fff; }
         .btn-success:hover { transform: translateY(-2px); box-shadow: 0 5px 20px rgba(0,176,155,0.3); }
-        .btn-refresh { background: linear-gradient(135deg, #00d4ff, #7f00ff); color: #fff; animation: glow 2s infinite; }
-        .btn-refresh:hover { transform: translateY(-2px) scale(1.02); box-shadow: 0 5px 30px rgba(0,212,255,0.4); }
-        @keyframes glow {
-            0%, 100% { box-shadow: 0 0 20px rgba(0,212,255,0.2); }
-            50% { box-shadow: 0 0 40px rgba(0,212,255,0.4); }
-        }
+        .btn-gold { background: linear-gradient(135deg, #ffd700, #ffaa00); color: #000; }
+        .btn-gold:hover { transform: translateY(-2px); box-shadow: 0 5px 20px rgba(255,215,0,0.3); }
         .upload-area { border: 2px dashed rgba(255,255,255,0.08); border-radius: 8px; padding: 15px; text-align: center; cursor: pointer; transition: 0.3s; }
         .upload-area:hover { border-color: rgba(255,0,127,0.3); background: rgba(255,0,127,0.03); }
         .upload-area.dragover { border-color: #ff007f; background: rgba(255,0,127,0.05); }
@@ -3236,26 +2925,19 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
         .console-warning { color: #ffaa00; }
         .console-info { color: #4facfe; }
         .reset-info { font-size: 0.7rem; color: rgba(255,255,255,0.3); margin-top: 5px; }
-        .refresh-status-text { font-size: 0.7rem; color: rgba(255,255,255,0.4); margin-top: 8px; padding: 8px 12px; background: rgba(0,0,0,0.3); border-radius: 6px; border-left: 3px solid #00d4ff; }
-        .refresh-status-text .highlight { color: #00ffcc; }
-        .refresh-status-text .error { color: #ff4444; }
-        /* Squad Leader Styles */
-        .squad-leader-item { background: rgba(255,215,0,0.05); border-left: 3px solid #ffd700; padding: 8px 12px; margin: 4px 0; border-radius: 6px; display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; font-size: 0.8rem; gap: 6px; }
-        .squad-leader-item .uid { color: #ffd700; font-family: monospace; font-weight: bold; }
-        .squad-leader-item .expired { color: #ff4444; }
-        .squad-leader-item .active { color: #00ffcc; }
         .file-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; margin-top: 8px; }
         .file-btn { background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06); border-radius: 8px; padding: 10px; text-align: center; cursor: pointer; transition: 0.3s; }
         .file-btn:hover { background: rgba(255,255,255,0.06); border-color: rgba(255,0,127,0.2); }
         .file-btn i { font-size: 1.2rem; color: #ff007f; }
         .file-btn .name { font-size: 0.7rem; color: rgba(255,255,255,0.4); margin-top: 2px; }
         .file-btn .sub { font-size: 0.6rem; color: rgba(255,255,255,0.2); }
-        .btn-gold { background: linear-gradient(135deg, #ffd700, #ffaa00); color: #000; }
-        .btn-gold:hover { transform: translateY(-2px); box-shadow: 0 5px 20px rgba(255,215,0,0.3); }
-        @media (max-width: 768px) { .controls-grid { grid-template-columns: 1fr; } .input-group { flex-direction: column; } .btn { width: 100%; justify-content: center; } .header { flex-direction: column; text-align: center; } .file-grid { grid-template-columns: 1fr; } }
+        .squad-leader-item { background: rgba(255,215,0,0.05); border-left: 3px solid #ffd700; padding: 8px 12px; margin: 4px 0; border-radius: 6px; display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; font-size: 0.8rem; gap: 6px; }
+        .squad-leader-item .uid { color: #ffd700; font-family: monospace; font-weight: bold; }
+        .squad-leader-item .expired { color: #ff4444; }
+        .squad-leader-item .active { color: #00ffcc; }
         .squad-list { max-height: 200px; overflow-y: auto; margin-top: 8px; }
         .squad-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
-        .squad-actions .btn { flex: 1; min-width: 100px; justify-content: center; }
+        @media (max-width: 768px) { .controls-grid { grid-template-columns: 1fr; } .input-group { flex-direction: column; } .btn { width: 100%; justify-content: center; } .header { flex-direction: column; text-align: center; } .file-grid { grid-template-columns: 1fr; } }
     </style>
 </head>
 <body>
@@ -3266,8 +2948,8 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
                 <div class="logo"><i class="fas fa-bolt"></i> MAHIR SYSTEM</div>
                 <div style="color: rgba(255,255,255,0.3); font-size:0.8rem;">
                     SPAM CONTROL ENGINE v3.2
-                    <span class="feature-badge"><i class="fas fa-sync"></i> Auto Status Check (5s)</span>
-                    <span class="feature-badge"><i class="fas fa-users"></i> Squad Auto-Join (5h)</span>
+                    <span class="feature-badge"><i class="fas fa-sync"></i> Auto Status Check (3s)</span>
+                    <span class="feature-badge"><i class="fas fa-users"></i> Squad Auto-Join (2h)</span>
                     <span class="feature-badge"><i class="fas fa-layer-group"></i> ROOM+GROUP</span>
                     <span class="feature-badge"><i class="fas fa-file"></i> File Manager</span>
                 </div>
@@ -3305,7 +2987,7 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
             </div>
         </div>
 
-        <!-- ==================== FILE MANAGER CARD ==================== -->
+        <!-- FILE MANAGER CARD -->
         <div class="control-card" style="margin-bottom:20px; border: 1px solid rgba(255,215,0,0.1);">
             <h3><i class="fas fa-folder-open" style="color:#ffd700;"></i> FILE MANAGER</h3>
             <div class="file-grid">
@@ -3339,19 +3021,18 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
             </div>
         </div>
 
-        <!-- ==================== SQUAD LEADER MANAGEMENT CARD ==================== -->
+        <!-- SQUAD LEADER MANAGEMENT CARD -->
         <div class="control-card" style="margin-bottom:20px; border: 1px solid rgba(255,215,0,0.15);">
             <h3><i class="fas fa-crown" style="color:#ffd700;"></i> SQUAD LEADER MANAGEMENT</h3>
             <div style="display:flex; gap:10px; flex-wrap:wrap; margin-bottom:10px;">
                 <button class="btn btn-gold btn-sm" onclick="refreshSquadLeaders()"><i class="fas fa-sync-alt"></i> Refresh List</button>
-                <button class="btn btn-danger btn-sm" onclick="cleanupExpiredSquadLeaders()"><i class="fas fa-trash"></i> Cleanup Expired (5h+)</button>
-                <button class="btn btn-warning btn-sm" onclick="cleanupExpiredTargets()"><i class="fas fa-broom"></i> Cleanup Expired Targets</button>
+                <button class="btn btn-danger btn-sm" onclick="cleanupExpiredSquadLeaders()"><i class="fas fa-trash"></i> Cleanup Expired (2h+)</button>
             </div>
             <div id="squadLeaderList" class="squad-list">
                 <div style="color:rgba(255,255,255,0.3); text-align:center; padding:15px;">Loading squad leaders...</div>
             </div>
             <div style="font-size:0.6rem; color:rgba(255,255,255,0.2); margin-top:5px;">
-                <i class="fas fa-info-circle"></i> Squad leaders expire after 5 hours. Click cleanup to remove expired ones.
+                <i class="fas fa-info-circle"></i> Squad leaders expire after 2 hours. Only Lv.2+ accounts can be added.
             </div>
         </div>
 
@@ -3376,41 +3057,8 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
             </div>
         </div>
 
-        <div class="controls-grid">
-            <div class="control-card">
-                <h3><i class="fas fa-file" style="color:#4facfe;"></i> FILES</h3>
-                <div style="background:rgba(0,0,0,0.3); padding:10px; border-radius:8px; font-size:0.8rem;">
-                    <div>📁 accs.txt (ACCOUNTS) - <span id="accCount" style="color:rgba(255,255,255,0.4);">0 accounts</span></div>
-                    <div style="display:flex; gap:8px; margin-top:8px; flex-wrap:wrap;">
-                        <button class="btn btn-outline btn-sm" onclick="downloadAccs()"><i class="fas fa-download"></i> accs.txt</button>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <!-- ==================== STATUS REFRESH CARD ==================== -->
-        <div class="control-card" style="margin-bottom:20px; border: 1px solid rgba(0, 212, 255, 0.15);">
-            <h3><i class="fas fa-sync-alt" style="color:#00d4ff;"></i> STATUS REFRESH</h3>
-            <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center;">
-                <button class="btn btn-refresh" onclick="refreshAllStatus()" style="flex:1; min-width:180px; padding:12px 20px; font-size:0.95rem;">
-                    <i class="fas fa-sync-alt"></i> 🔄 REFRESH ALL TARGETS STATUS
-                </button>
-                <div style="display:flex; gap:6px; flex-wrap:wrap; flex:1;">
-                    <input type="text" id="refreshSingleUid" placeholder="Single UID" style="padding:10px 14px; border:1px solid rgba(255,255,255,0.08); border-radius:8px; background:rgba(0,0,0,0.4); color:#fff; font-family:monospace; outline:none; min-width:120px; flex:1;">
-                    <button class="btn btn-outline" onclick="refreshSingleTarget()" style="padding:10px 16px;">
-                        <i class="fas fa-sync"></i> Refresh
-                    </button>
-                </div>
-            </div>
-            <div id="refreshStatus" class="refresh-status-text">
-                <i class="fas fa-info-circle"></i> Click the button above to refresh status of all active targets
-                <span style="float:right; font-size:0.6rem; color:rgba(255,255,255,0.2);">Last refresh: <span id="lastRefreshTime">Never</span></span>
-            </div>
-        </div>
-        <!-- ==================== END: STATUS REFRESH CARD ==================== -->
-
         <div class="control-card" style="margin-bottom:20px;">
-            <h3><i class="fas fa-list"></i> ACTIVE TARGETS <span style="font-size:0.6rem; color:rgba(255,255,255,0.3);">(Status auto-check every 5s)</span></h3>
+            <h3><i class="fas fa-list"></i> ACTIVE TARGETS <span style="font-size:0.6rem; color:rgba(255,255,255,0.3);">(Status auto-check every 3s)</span></h3>
             <div id="activeList" class="active-list">
                 <div style="color:rgba(255,255,255,0.3); text-align:center; padding:15px;">No active targets</div>
             </div>
@@ -3420,11 +3068,10 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
             <h3><i class="fas fa-terminal"></i> LIVE CONSOLE</h3>
             <div class="console-box" id="consoleBox">
                 <div class="line"><span style="color:rgba(255,255,255,0.3);">[System]</span> <span class="console-success">MAHIR SPAM ENGINE Initialized</span></div>
-                <div class="line"><span style="color:rgba(255,255,255,0.3);">[System]</span> <span class="console-info">Status check every 5 seconds</span></div>
-                <div class="line"><span style="color:rgba(255,255,255,0.3);">[System]</span> <span class="console-info">Squad auto-join enabled (5 hours duration)</span></div>
-                <div class="line"><span style="color:rgba(255,255,255,0.3);">[System]</span> <span class="console-info">Accounts: accs.txt</span></div>
-                <div class="line"><span style="color:rgba(255,255,255,0.3);">[System]</span> <span class="console-info">File Manager: Download/Upload targets.txt & squad_data.json</span></div>
-                <div class="line"><span style="color:rgba(255,255,255,0.3);">[System]</span> <span class="console-info">Squad leaders expire after 5 hours</span></div>
+                <div class="line"><span style="color:rgba(255,255,255,0.3);">[System]</span> <span class="console-info">Status check every 3 seconds</span></div>
+                <div class="line"><span style="color:rgba(255,255,255,0.3);">[System]</span> <span class="console-info">Squad auto-join enabled (2 hours duration)</span></div>
+                <div class="line"><span style="color:rgba(255,255,255,0.3);">[System]</span> <span class="console-info">Squad leaders expire after 2 hours</span></div>
+                <div class="line"><span style="color:rgba(255,255,255,0.3);">[System]</span> <span class="console-info">Only Lv.2+ accounts can be added as squad leaders</span></div>
             </div>
         </div>
 
@@ -3435,7 +3082,7 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
             </div>
         </div>
 
-        <div class="footer">MAHIR SYSTEM v3.2 | <i class="fas fa-code"></i> Engine by MAHIR | Status Check: 5s | Squad Auto-Join: 5hours | ROOM+GROUP | File Manager</div>
+        <div class="footer">MAHIR SYSTEM v3.2 | <i class="fas fa-code"></i> Engine by MAHIR | Status Check: 3s | Squad Auto-Join: 2hours | ROOM+GROUP | File Manager</div>
     </div>
 
     <script>
@@ -3464,140 +3111,6 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
             document.body.appendChild(t);
             setTimeout(() => t.remove(), 4000);
         }
-
-        // ==================== REFRESH FUNCTIONS ====================
-        function refreshAllStatus() {
-            const statusDiv = document.getElementById('refreshStatus');
-            const btn = document.querySelector('.btn-refresh');
-            const lastRefreshSpan = document.getElementById('lastRefreshTime');
-            
-            statusDiv.innerHTML = '<i class="fas fa-spinner fa-spin" style="color:#00d4ff;"></i> 🔄 Refreshing all targets status...';
-            statusDiv.style.color = '#00ffcc';
-            btn.disabled = true;
-            btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Refreshing...';
-            
-            fetch('/api/refresh-all-status', { 
-                method: 'GET',
-                headers: { 'Content-Type': 'application/json' }
-            })
-            .then(response => {
-                if (!response.ok) {
-                    throw new Error(`HTTP error! status: ${response.status}`);
-                }
-                return response.json();
-            })
-            .then(d => {
-                if (d.success) {
-                    const now = new Date();
-                    const timeStr = now.toLocaleTimeString();
-                    if (lastRefreshSpan) {
-                        lastRefreshSpan.textContent = timeStr;
-                    }
-                    
-                    statusDiv.innerHTML = `<i class="fas fa-check-circle" style="color:#00ffcc;"></i> ✅ ${d.message} (${d.refreshed} targets) [${d.method || 'GET'}] 
-                        <span style="float:right; font-size:0.6rem; color:rgba(255,255,255,0.2);">Updated: ${timeStr}</span>`;
-                    statusDiv.style.color = '#00ffcc';
-                    showToast(`✅ ${d.message}`, 'success');
-                    refreshStatus();
-                    
-                    const consoleBox = document.getElementById('consoleBox');
-                    const line = document.createElement('div');
-                    line.className = 'line';
-                    line.innerHTML = `<span style="color:rgba(255,255,255,0.3);">[Refresh]</span> <span class="console-success">✅ Refreshed ${d.refreshed} targets (${d.method || 'GET'})</span>`;
-                    consoleBox.appendChild(line);
-                    consoleBox.scrollTop = consoleBox.scrollHeight;
-                } else {
-                    statusDiv.innerHTML = `<i class="fas fa-exclamation-circle" style="color:#ff4444;"></i> ❌ ${d.message}`;
-                    statusDiv.style.color = '#ff4444';
-                    showToast(`❌ ${d.message}`, 'error');
-                }
-            })
-            .catch((err) => {
-                statusDiv.innerHTML = `<i class="fas fa-exclamation-circle" style="color:#ff4444;"></i> ❌ Refresh failed: ${err.message}`;
-                statusDiv.style.color = '#ff4444';
-                showToast('❌ Refresh failed', 'error');
-                console.error('Refresh error:', err);
-            })
-            .finally(() => {
-                btn.disabled = false;
-                btn.innerHTML = '<i class="fas fa-sync-alt"></i> 🔄 REFRESH ALL TARGETS STATUS';
-            });
-        }
-
-        function refreshSingleTarget() {
-            const uid = document.getElementById('refreshSingleUid').value.trim();
-            if (!uid) {
-                showToast('Enter a valid UID!', 'error');
-                return;
-            }
-            if (!/^\\d+$/.test(uid)) {
-                showToast('Invalid UID format!', 'error');
-                return;
-            }
-            
-            const statusDiv = document.getElementById('refreshStatus');
-            const lastRefreshSpan = document.getElementById('lastRefreshTime');
-            
-            statusDiv.innerHTML = `<i class="fas fa-spinner fa-spin" style="color:#00d4ff;"></i> 🔄 Refreshing target ${uid}...`;
-            statusDiv.style.color = '#00ffcc';
-            
-            fetch(`/api/refresh-target-status/${uid}`, { 
-                method: 'GET',
-                headers: { 'Content-Type': 'application/json' }
-            })
-            .then(response => {
-                if (!response.ok) {
-                    throw new Error(`HTTP error! status: ${response.status}`);
-                }
-                return response.json();
-            })
-            .then(d => {
-                if (d.success) {
-                    const now = new Date();
-                    const timeStr = now.toLocaleTimeString();
-                    if (lastRefreshSpan) {
-                        lastRefreshSpan.textContent = timeStr;
-                    }
-                    
-                    statusDiv.innerHTML = `<i class="fas fa-check-circle" style="color:#00ffcc;"></i> ✅ ${d.message} - Status: <span class="highlight">${d.details.status}</span>
-                        <span style="float:right; font-size:0.6rem; color:rgba(255,255,255,0.2);">Updated: ${timeStr}</span>`;
-                    statusDiv.style.color = '#00ffcc';
-                    showToast(`✅ ${d.message}`, 'success');
-                    refreshStatus();
-                    document.getElementById('refreshSingleUid').value = '';
-                    
-                    const consoleBox = document.getElementById('consoleBox');
-                    const line = document.createElement('div');
-                    line.className = 'line';
-                    line.innerHTML = `<span style="color:rgba(255,255,255,0.3);">[Refresh]</span> <span class="console-success">✅ ${uid} → ${d.details.status} (${d.method || 'GET'})</span>`;
-                    consoleBox.appendChild(line);
-                    consoleBox.scrollTop = consoleBox.scrollHeight;
-                } else {
-                    statusDiv.innerHTML = `<i class="fas fa-exclamation-circle" style="color:#ff4444;"></i> ❌ ${d.message}`;
-                    statusDiv.style.color = '#ff4444';
-                    showToast(`❌ ${d.message}`, 'error');
-                }
-            })
-            .catch((err) => {
-                statusDiv.innerHTML = `<i class="fas fa-exclamation-circle" style="color:#ff4444;"></i> ❌ Refresh failed: ${err.message}`;
-                statusDiv.style.color = '#ff4444';
-                showToast('❌ Refresh failed', 'error');
-                console.error('Refresh error:', err);
-            });
-        }
-
-        document.addEventListener('DOMContentLoaded', function() {
-            const input = document.getElementById('refreshSingleUid');
-            if (input) {
-                input.addEventListener('keypress', function(e) {
-                    if (e.key === 'Enter') {
-                        e.preventDefault();
-                        refreshSingleTarget();
-                    }
-                });
-            }
-        });
-        // ==================== END REFRESH FUNCTIONS ====================
 
         // ==================== FILE MANAGEMENT FUNCTIONS ====================
         function downloadFile(type) {
@@ -3674,7 +3187,7 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
                                     <div>
                                         <span class="uid">👑 ${l.uid}</span>
                                         ${l.is_expired ? '<span class="expired">⏰ EXPIRED</span>' : `<span class="active">⏱ ${l.remaining_minutes}m remaining</span>`}
-                                        <span style="font-size:0.6rem; color:rgba(255,255,255,0.3);">(Started: ${l.elapsed_minutes}m ago)</span>
+                                        <span style="font-size:0.6rem; color:rgba(255,255,255,0.3);">(Lv.${l.level || '?'})</span>
                                     </div>
                                     <div style="display:flex; gap:6px; align-items:center; flex-wrap:wrap;">
                                         ${l.original_target ? `<span style="font-size:0.6rem; color:rgba(255,255,255,0.3);">🎯 From: ${l.original_target}</span>` : ''}
@@ -3698,7 +3211,7 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
         }
 
         function cleanupExpiredSquadLeaders() {
-            if (!confirm('⚠️ Remove all expired squad leaders (>5 hours)?')) return;
+            if (!confirm('⚠️ Remove all expired squad leaders (>2 hours)?')) return;
             
             showToast('Cleaning up expired squad leaders...', 'info');
             
@@ -3708,30 +3221,6 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
                     if (d.success) {
                         showToast(`✅ ${d.message}`, 'success');
                         refreshSquadLeaders();
-                        refreshStatus();
-                        const consoleBox = document.getElementById('consoleBox');
-                        const line = document.createElement('div');
-                        line.className = 'line';
-                        line.innerHTML = `<span style="color:rgba(255,255,255,0.3);">[Cleanup]</span> <span class="console-success">✅ Removed ${d.removed_count} expired squad leaders</span>`;
-                        consoleBox.appendChild(line);
-                        consoleBox.scrollTop = consoleBox.scrollHeight;
-                    } else {
-                        showToast(`❌ ${d.message}`, 'error');
-                    }
-                })
-                .catch(() => showToast('❌ Cleanup failed', 'error'));
-        }
-
-        function cleanupExpiredTargets() {
-            if (!confirm('⚠️ Clean up expired targets from active list?')) return;
-            
-            showToast('Cleaning up expired targets...', 'info');
-            
-            fetch('/api/cleanup/expired-targets', { method: 'POST' })
-                .then(r => r.json())
-                .then(d => {
-                    if (d.success) {
-                        showToast(`✅ ${d.message}`, 'success');
                         refreshStatus();
                     } else {
                         showToast(`❌ ${d.message}`, 'error');
@@ -3779,7 +3268,6 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
                 .then(d => {
                     if (d.success) {
                         document.getElementById('fileAccCount').textContent = d.total;
-                        document.getElementById('accCount').textContent = `${d.total} accounts (Group: ${d.group}, Room: ${d.room})`;
                     }
                 })
                 .catch(() => {});
@@ -3812,6 +3300,7 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
             if (!uid) { showToast('Enter target UID(s)!', 'error'); return; }
             const uids = uid.split(',').map(u => u.trim()).filter(u => /^\\d+$/.test(u));
             if (!uids.length) { showToast('Invalid UID(s)!', 'error'); return; }
+            showToast(`Starting spam on ${uids.length} target(s)...`, 'info');
             fetch('/api/spam/start', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ uid: uid }) })
                 .then(r => r.json())
                 .then(d => { if (d.success) { showToast(`Started spam on ${uids.length} target(s)`, 'success'); refreshStatus(); } else showToast(d.message || 'Failed', 'error'); })
@@ -3829,7 +3318,6 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
         }
 
         function stopAllSpam() { if (!confirm('⚠️ Stop all spam?')) return; fetch('/api/stop-all').then(r => r.json()).then(d => { if (d.success) { showToast(d.message, 'success'); refreshStatus(); } }).catch(() => showToast('Error', 'error')); }
-        function downloadAccs() { window.location.href = '/api/get/accs'; }
         function quickStop(uid) { document.getElementById('stopUid').value = uid; stopSingleSpam(); }
 
         function getStatusLabel(status) {
@@ -3883,7 +3371,7 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
         }
 
         // Initial refresh
-        setInterval(refreshStatus, 5000);
+        setInterval(refreshStatus, 3000);
         refreshStatus();
         refreshSquadLeaders();
         document.getElementById('spamUid').addEventListener('keypress', e => { if (e.key === 'Enter') startSpam(); });
@@ -3903,10 +3391,11 @@ def main():
     ║                                                                      ║
     ║     ✅ Room Spam + Group/Squad *Badge Spam (accs.txt)                ║
     ║     ✅ Auto Status Check: Every 3 seconds                           ║
-    ║     ✅ Squad Auto-Join: 5 hours                                  ║
+    ║     ✅ Squad Auto-Join: 2 hours                                     ║
+    ║     ✅ Squad Leader: Only Lv.2+ accounts                            ║
     ║     ✅ File Manager: Download/Upload targets.txt & squad_data.json   ║
-    ║     ✅ Squad Leader Management: View & Cleanup expired               ║
     ║     ✅ Target Viewer: /targets (Pass: HUNTERMAHIR)                  ║
+    ║     ✅ Custom Banner Generation: /api/banner/<uid>                  ║
     ║                                                                      ║
     ║     🌐 Web Panel: http://127.0.0.1:8080                             ║
     ║     🔑 Admin Pass: MAHIRJOD                                         ║
@@ -3921,16 +3410,15 @@ def main():
     status_thread.start()
     print(f"{G}✅ Status checker thread started (every {STATUS_CHECK_INTERVAL}s){RS}")
 
-    # ২. প্রথমবার একাউন্ট রান করা
+    # Start accounts
     Thread(target=run_accounts, daemon=True).start()
 
-    # ৩. কিছুক্ষণ অপেক্ষা করে বাকি টার্গেটগুলো লোড করা
+    # Load saved targets
     time.sleep(1)
     clean_and_load_squad_targets()
     load_saved_targets()
 
     port = int(os.environ.get("PORT", 8080))
-    # ৪. ফ্লাস্ক অ্যাপ রান করা
     app.run(host='0.0.0.0', port=port, debug=False, threaded=True)
 
 if __name__ == "__main__":
@@ -3943,5 +3431,10 @@ if __name__ == "__main__":
         from protobuf_decoder.protobuf_decoder import Parser
     except ImportError:
         os.system("pip install protobuf-decoder")
+
+    try:
+        from PIL import Image, ImageDraw, ImageFont
+    except ImportError:
+        os.system("pip install Pillow")
 
     main()
