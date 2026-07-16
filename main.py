@@ -43,7 +43,7 @@ spam_threads = {}
 spam_threads_lock = threading.Lock()
 target_status_cache = {}
 squad_targets = {}
-SQUAD_JOIN_DURATION = 24 * 60 * 60
+SQUAD_JOIN_DURATION = 5 * 60 * 60   # 5 hours
 STATUS_CHECK_INTERVAL = 1
 ACCOUNT_REFRESH_INTERVAL = 10 * 60
 
@@ -945,7 +945,7 @@ def clean_and_load_squad_targets():
         if (current_time - start_time).total_seconds() < SQUAD_JOIN_DURATION:
             updated_data[uid] = info
             start_spam(uid, 'squad')
-            print(f"{G}✅ Restored Squad Target: {uid} (Remaining: {int(1440 - (current_time - start_time).total_seconds()/60)} min){RS}")
+            print(f"{G}✅ Restored Squad Target: {uid} (Remaining: {int(300 - (current_time - start_time).total_seconds()/60)} min){RS}")
         else:
             print(f"{R}⏰ Expired: {uid} (Still kept in file){RS}")
             
@@ -991,7 +991,7 @@ def add_squad_leader_as_target(squad_leader_uid, original_target_uid):
             spam_threads[squad_leader_uid] = thread
         thread.start()
         
-        print(f"{G}✅ Squad leader {squad_leader_uid} saved to JSON & started (24 hours){RS}")
+        print(f"{G}✅ Squad leader {squad_leader_uid} saved to JSON & started (5 hours){RS}")
         return True
 
 def update_target_status(target_uid):
@@ -1041,7 +1041,7 @@ def status_checker_thread():
             current_time = datetime.now()
             for squad_leader, data in list(squad_targets.items()):
                 if (current_time - data['start_time']).total_seconds() > SQUAD_JOIN_DURATION:
-                    print(f"{Y}⏰ Squad leader {squad_leader} duration expired (24 hours){RS}")
+                    print(f"{Y}⏰ Squad leader {squad_leader} duration expired (5 hours){RS}")
                     with active_spam_lock:
                         if squad_leader in active_spam_targets:
                             del active_spam_targets[squad_leader]
@@ -2593,7 +2593,7 @@ def get_squad_leaders():
 @app.route('/api/squad-leaders/cleanup', methods=['POST'])
 @login_required
 def cleanup_squad_leaders():
-    """Remove expired squad leaders (more than 24 hours old) from squad_data.json and target list"""
+    """Remove expired squad leaders (more than 5 hours old) from squad_data.json and target list"""
     try:
         data = load_squad_json()
         current_time = datetime.now()
@@ -2668,7 +2668,7 @@ def cleanup_expired_targets():
                 start_time = info.get('start_time')
                 if start_time:
                     elapsed = (current_time - start_time).total_seconds()
-                    # If target is older than 24 hours and marked as squad leader
+                    # If target is older than 5 hours and marked as squad leader
                     if elapsed >= SQUAD_JOIN_DURATION and info.get('is_squad_leader', False):
                         targets_to_remove.append(uid)
         
@@ -2819,7 +2819,7 @@ TARGETS_TEMPLATE = '''<!DOCTYPE html>
         .search-box input:focus { border-color: #ffd700; box-shadow: 0 0 20px rgba(255,215,0,0.1); }
         .search-box button { padding: 10px 16px; border: none; border-radius: 8px; background: linear-gradient(135deg, #ffd700, #ffaa00); color: #000; font-weight: 600; cursor: pointer; transition: 0.3s; font-size: 0.9rem; }
         .search-box button:hover { transform: translateY(-2px); box-shadow: 0 5px 20px rgba(255,215,0,0.3); }
-        .target-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 20px; margin-top: 25px; }
+        .target-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 20px; margin-top: 25px; }
         .target-card { background: rgba(20, 20, 50, 0.7); border-radius: 16px; overflow: hidden; border: 1px solid rgba(255,255,255,0.06); backdrop-filter: blur(10px); transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275); animation: fadeIn 0.5s ease forwards; opacity: 0; transform: translateY(20px); cursor: pointer; }
         .target-card:nth-child(1) { animation-delay: 0.05s; }
         .target-card:nth-child(2) { animation-delay: 0.10s; }
@@ -2831,7 +2831,11 @@ TARGETS_TEMPLATE = '''<!DOCTYPE html>
         .target-card:nth-child(8) { animation-delay: 0.40s; }
         @keyframes fadeIn { to { opacity: 1; transform: translateY(0); } }
         .target-card:hover { transform: translateY(-6px) scale(1.02); border-color: rgba(255, 215, 0, 0.4); box-shadow: 0 15px 50px rgba(255, 215, 0, 0.15); }
-        .target-card img { width: 100%; height: auto; display: block; border-bottom: 1px solid rgba(255,255,255,0.05); pointer-events: none; }
+        .target-card .banner-container { position: relative; width: 100%; padding-top: 50%; background: rgba(0,0,0,0.3); overflow: hidden; }
+        .target-card .banner-container img { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; display: block; border-bottom: 1px solid rgba(255,255,255,0.05); pointer-events: none; transition: 0.3s; }
+        .target-card .banner-container .banner-placeholder { position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; background: linear-gradient(135deg, rgba(255,215,0,0.05), rgba(255,0,127,0.05)); color: rgba(255,255,255,0.1); font-size: 2rem; }
+        .target-card .banner-container .banner-placeholder i { opacity: 0.3; }
+        .target-card .banner-container .banner-status { position: absolute; top: 8px; right: 8px; background: rgba(0,0,0,0.7); padding: 2px 10px; border-radius: 10px; font-size: 0.6rem; color: rgba(255,255,255,0.3); backdrop-filter: blur(4px); }
         .target-card .info { padding: 12px 14px; display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 4px; background: rgba(0,0,0,0.3); }
         .target-card .info .uid { font-family: monospace; font-weight: bold; color: #ffd700 !important; font-size: 1rem; text-shadow: 0 0 30px rgba(255, 215, 0, 0.4); }
         .target-card .info .type { font-size: 0.6rem; background: rgba(255, 215, 0, 0.15); padding: 2px 10px; border-radius: 10px; color: #ffd700 !important; text-transform: uppercase; }
@@ -2878,6 +2882,7 @@ TARGETS_TEMPLATE = '''<!DOCTYPE html>
         @keyframes spin { to { transform: rotate(360deg); } }
         .modal-error { text-align: center; padding: 30px; color: #ff4444; }
         .modal-error i { font-size: 2.5rem; display: block; margin-bottom: 15px; }
+        .banner-stats { font-size: 0.6rem; color: rgba(255,255,255,0.2); margin-top: 5px; text-align: center; }
         @media (max-width: 600px) { .target-grid { grid-template-columns: 1fr; } .header { flex-direction: column; text-align: center; } .search-box { width: 100%; justify-content: center; } .search-box input { flex: 1; min-width: 120px; } .modal-grid { grid-template-columns: 1fr; } .modal-header { flex-direction: column; text-align: center; } }
     </style>
 </head>
@@ -2903,7 +2908,10 @@ TARGETS_TEMPLATE = '''<!DOCTYPE html>
     <div id="targetGrid" class="target-grid">
         <div class="empty-state"><i class="fas fa-crosshairs"></i> No active targets</div>
     </div>
-    <div class="footer">MAHIR TARGET VIEWER v1.0 | <i class="fas fa-bolt" style="color:#ffd700;"></i> Click on any target card for full profile</div>
+    <div class="footer">
+        MAHIR TARGET VIEWER v2.0 | <i class="fas fa-bolt" style="color:#ffd700;"></i> Click on any target card for full profile
+        <div class="banner-stats"><i class="fas fa-image"></i> Banner API called once per UID (cached)</div>
+    </div>
 </div>
 
 <div class="modal-overlay" id="profileModal">
@@ -2916,6 +2924,26 @@ TARGETS_TEMPLATE = '''<!DOCTYPE html>
 </div>
 
 <script>
+    // ==================== BANNER CACHE SYSTEM (ONLY 1 API CALL PER UID) ====================
+    const bannerCache = {}; // UID → 'loading' | 'success' | 'failed'
+
+    function getBannerUrl(uid) {
+        // যদি আগে failed হয়, তাহলে আর কল করবে না
+        if (bannerCache[uid] === 'failed') {
+            return ''; // খালি স্ট্রিং → ইমেজ দেখাবে না
+        }
+        
+        // যদি প্রথমবার বা loading স্টেটে থাকে, তাহলে কল করবে
+        if (!bannerCache[uid] || bannerCache[uid] === 'loading') {
+            bannerCache[uid] = 'loading';
+            return `https://mahir-banner-api.vercel.app/profile?uid=${uid}`;
+        }
+        
+        // success হলে URL রিটার্ন করবে (ব্রাউজার ক্যাশ থেকে নিবে)
+        return `https://mahir-banner-api.vercel.app/profile?uid=${uid}`;
+    }
+
+    // ==================== RENDER FUNCTION ====================
     const targetGrid = document.getElementById('targetGrid');
     const targetCount = document.getElementById('targetCount');
 
@@ -2948,22 +2976,44 @@ TARGETS_TEMPLATE = '''<!DOCTYPE html>
             targetGrid.innerHTML = '<div class="empty-state"><i class="fas fa-crosshairs"></i> No active targets</div>';
             return;
         }
-        targetGrid.innerHTML = targets.map((t, index) => `
-            <div class="target-card" style="animation-delay: ${index * 0.05}s" onclick="openProfile('${t.uid}')">
-                <img src="${t.banner_url}" alt="Banner for ${t.uid}" loading="lazy" onerror="this.src='/api/profile/${t.uid}'">
-                <div class="info">
-                    <span class="uid">🎯 ${t.uid}</span>
-                    ${t.squad_leader ? `<span class="squad-leader">👥 L:${t.squad_leader}</span>` : ''}
-                    ${t.is_squad_leader ? `<span class="squad-leader">👑 SQUAD LEADER</span>` : ''}
-                    ${t.original_target ? `<span class="squad-leader">🎯 From:${t.original_target}</span>` : ''}
-                    <span class="type">${t.type}</span>
-                    <span class="time"><i class="fas fa-clock"></i> ${t.elapsed_minutes}m</span>
-                    <div class="added-info">👤 ADDED BY: ${t.added_by || 'MAHIR'} ${t.added_time ? '| ' + t.added_time : ''}</div>
+
+        targetGrid.innerHTML = targets.map((t, index) => {
+            const uid = t.uid;
+            const bannerSrc = getBannerUrl(uid);
+            
+            return `
+                <div class="target-card" style="animation-delay: ${index * 0.05}s" onclick="openProfile('${uid}')">
+                    <div class="banner-container">
+                        ${bannerSrc ? `
+                            <img src="${bannerSrc}" 
+                                 alt="Banner for ${uid}" 
+                                 loading="lazy"
+                                 onload="bannerCache['${uid}']='success';"
+                                 onerror="this.style.display='none'; bannerCache['${uid}']='failed'; console.log('Banner failed for ${uid}');">
+                        ` : `
+                            <div class="banner-placeholder">
+                                <i class="fas fa-user-slash"></i>
+                            </div>
+                        `}
+                        <div class="banner-status">
+                            ${bannerCache[uid] === 'success' ? '✅' : bannerCache[uid] === 'failed' ? '❌' : '⏳'}
+                        </div>
+                    </div>
+                    <div class="info">
+                        <span class="uid">🎯 ${uid}</span>
+                        ${t.squad_leader ? `<span class="squad-leader">👥 L:${t.squad_leader}</span>` : ''}
+                        ${t.is_squad_leader ? `<span class="squad-leader">👑 SQUAD LEADER</span>` : ''}
+                        ${t.original_target ? `<span class="squad-leader">🎯 From:${t.original_target}</span>` : ''}
+                        <span class="type">${t.type}</span>
+                        <span class="time"><i class="fas fa-clock"></i> ${t.elapsed_minutes}m</span>
+                        <div class="added-info">👤 ADDED BY: ${t.added_by || 'MAHIR'} ${t.added_time ? '| ' + t.added_time : ''}</div>
+                    </div>
                 </div>
-            </div>
-        `).join('');
+            `;
+        }).join('');
     }
 
+    // ==================== REFRESH FUNCTION ====================
     function refreshTargets() {
         fetch('/api/targets?pass=HUNTERMAHIR')
             .then(r => r.json())
@@ -2979,6 +3029,7 @@ TARGETS_TEMPLATE = '''<!DOCTYPE html>
             .catch(() => {});
     }
 
+    // ==================== PROFILE MODAL ====================
     async function openProfile(uid) {
         const modal = document.getElementById('profileModal');
         const content = document.getElementById('modalContent');
@@ -3091,6 +3142,7 @@ TARGETS_TEMPLATE = '''<!DOCTYPE html>
         if (e.key === 'Escape') closeModal();
     });
 
+    // ==================== SEARCH FUNCTION ====================
     function searchTarget() {
         const uid = document.getElementById('searchInput').value.trim();
         if (!uid || !/^\\d+$/.test(uid)) {
@@ -3138,12 +3190,28 @@ TARGETS_TEMPLATE = '''<!DOCTYPE html>
         document.getElementById('searchInput').value = '';
     }
 
+    // ==================== AUTO REFRESH (3 SECONDS) ====================
+    // প্রথমবার লোড
     fetch('/api/targets?pass=HUNTERMAHIR')
         .then(r => r.json())
         .then(data => {
             if (data.success) renderTargets(data.targets);
         })
         .catch(() => {});
+
+    // প্রতি 3 সেকেন্ডে রিফ্রেশ (কিন্তু ব্যানার API কল হবে না, কারণ ক্যাশেড)
+    setInterval(() => {
+        fetch('/api/targets?pass=HUNTERMAHIR')
+            .then(r => r.json())
+            .then(data => {
+                if (data.success) renderTargets(data.targets);
+            })
+            .catch(() => {});
+    }, 3000);
+
+    // কনসোলে ক্যাশ স্ট্যাটাস দেখান
+    console.log('🔄 Banner Cache System Active - Each UID will call API only ONCE');
+    console.log('📊 Cache Status:', bannerCache);
 </script>
 </body>
 </html>'''
@@ -3266,7 +3334,7 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
                 <div style="color: rgba(255,255,255,0.3); font-size:0.8rem;">
                     SPAM CONTROL ENGINE v3.2
                     <span class="feature-badge"><i class="fas fa-sync"></i> Auto Status Check (5s)</span>
-                    <span class="feature-badge"><i class="fas fa-users"></i> Squad Auto-Join (24h)</span>
+                    <span class="feature-badge"><i class="fas fa-users"></i> Squad Auto-Join (5h)</span>
                     <span class="feature-badge"><i class="fas fa-layer-group"></i> ROOM+GROUP</span>
                     <span class="feature-badge"><i class="fas fa-file"></i> File Manager</span>
                 </div>
@@ -3343,14 +3411,14 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
             <h3><i class="fas fa-crown" style="color:#ffd700;"></i> SQUAD LEADER MANAGEMENT</h3>
             <div style="display:flex; gap:10px; flex-wrap:wrap; margin-bottom:10px;">
                 <button class="btn btn-gold btn-sm" onclick="refreshSquadLeaders()"><i class="fas fa-sync-alt"></i> Refresh List</button>
-                <button class="btn btn-danger btn-sm" onclick="cleanupExpiredSquadLeaders()"><i class="fas fa-trash"></i> Cleanup Expired (24h+)</button>
+                <button class="btn btn-danger btn-sm" onclick="cleanupExpiredSquadLeaders()"><i class="fas fa-trash"></i> Cleanup Expired (5h+)</button>
                 <button class="btn btn-warning btn-sm" onclick="cleanupExpiredTargets()"><i class="fas fa-broom"></i> Cleanup Expired Targets</button>
             </div>
             <div id="squadLeaderList" class="squad-list">
                 <div style="color:rgba(255,255,255,0.3); text-align:center; padding:15px;">Loading squad leaders...</div>
             </div>
             <div style="font-size:0.6rem; color:rgba(255,255,255,0.2); margin-top:5px;">
-                <i class="fas fa-info-circle"></i> Squad leaders expire after 24 hours. Click cleanup to remove expired ones.
+                <i class="fas fa-info-circle"></i> Squad leaders expire after 5 hours. Click cleanup to remove expired ones.
             </div>
         </div>
 
@@ -3420,10 +3488,10 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
             <div class="console-box" id="consoleBox">
                 <div class="line"><span style="color:rgba(255,255,255,0.3);">[System]</span> <span class="console-success">MAHIR SPAM ENGINE Initialized</span></div>
                 <div class="line"><span style="color:rgba(255,255,255,0.3);">[System]</span> <span class="console-info">Status check every 5 seconds</span></div>
-                <div class="line"><span style="color:rgba(255,255,255,0.3);">[System]</span> <span class="console-info">Squad auto-join enabled (24 hours duration)</span></div>
+                <div class="line"><span style="color:rgba(255,255,255,0.3);">[System]</span> <span class="console-info">Squad auto-join enabled (5 hours duration)</span></div>
                 <div class="line"><span style="color:rgba(255,255,255,0.3);">[System]</span> <span class="console-info">Accounts: accs.txt</span></div>
                 <div class="line"><span style="color:rgba(255,255,255,0.3);">[System]</span> <span class="console-info">File Manager: Download/Upload targets.txt & squad_data.json</span></div>
-                <div class="line"><span style="color:rgba(255,255,255,0.3);">[System]</span> <span class="console-info">Squad leaders expire after 24 hours</span></div>
+                <div class="line"><span style="color:rgba(255,255,255,0.3);">[System]</span> <span class="console-info">Squad leaders expire after 5 hours</span></div>
             </div>
         </div>
 
@@ -3434,7 +3502,7 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
             </div>
         </div>
 
-        <div class="footer">MAHIR SYSTEM v3.2 | <i class="fas fa-code"></i> Engine by MAHIR | Status Check: 5s | Squad Auto-Join: 24hours | ROOM+GROUP | File Manager</div>
+        <div class="footer">MAHIR SYSTEM v3.2 | <i class="fas fa-code"></i> Engine by MAHIR | Status Check: 5s | Squad Auto-Join: 5hours | ROOM+GROUP | File Manager</div>
     </div>
 
     <script>
@@ -3697,7 +3765,7 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
         }
 
         function cleanupExpiredSquadLeaders() {
-            if (!confirm('⚠️ Remove all expired squad leaders (>24 hours)?')) return;
+            if (!confirm('⚠️ Remove all expired squad leaders (>5 hours)?')) return;
             
             showToast('Cleaning up expired squad leaders...', 'info');
             
@@ -3902,7 +3970,7 @@ def main():
     ║                                                                      ║
     ║     ✅ Room Spam + Group/Squad *Badge Spam (accs.txt)                ║
     ║     ✅ Auto Status Check: Every 3 seconds                           ║
-    ║     ✅ Squad Auto-Join: 24 hours                                  ║
+    ║     ✅ Squad Auto-Join: 5 hours                                  ║
     ║     ✅ File Manager: Download/Upload targets.txt & squad_data.json   ║
     ║     ✅ Squad Leader Management: View & Cleanup expired               ║
     ║     ✅ Target Viewer: /targets (Pass: HUNTERMAHIR)                  ║
