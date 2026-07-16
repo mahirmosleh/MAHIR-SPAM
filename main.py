@@ -52,6 +52,15 @@ SQUAD_DATA_FILE = "squad_data.json"
 TARGETS_PASSWORD = "HUNTERMAHIR"
 is_resetting = False  # রিসেট চলছে কিনা ট্র্যাক করার জন্য
 
+# ==================== LAG SPAM VARIABLES ====================
+lag_spam_running = False
+lag_spam_thread = None
+lag_spam_lock = threading.Lock()
+lag_spam_online_writer = None
+lag_spam_key = None
+lag_spam_iv = None
+lag_spam_region = "BD"
+
 C = "\033[96m"
 G = "\033[92m"
 Y = "\033[93m"
@@ -66,6 +75,10 @@ BADGES = {
     "MODERATOR": 2048,
     "SMALL_V": 64,
 }
+
+# ==================== GROUP LEADER TRACKING ====================
+group_leader_accounts = set()
+group_leader_lock = threading.Lock()
 
 # ================================================================
 # 🔄 LIVE UPDATE SYSTEM
@@ -425,7 +438,7 @@ def _pRoom(pkt):
         'emulator': bool(rd.get('17', {}).get('data', 1)),
     }
 
-async def _rAll(reader, timeout=0.1): # ভ্যালু কমিয়ে ০.১ করা হয়েছে যাতে দ্রুত কাজ করে
+async def _rAll(reader, timeout=0.1):
     buf = b''
     while True:
         try: chunk = await asyncio.wait_for(reader.read(65536), timeout=timeout)
@@ -542,11 +555,11 @@ async def check_target_status_async(uid):
         try:
             wr.write(bytes.fromhex(sx['auth']))
             await wr.drain()
-            await _rAll(rd, timeout=0.2) # হ্যান্ডশেকের জন্য ০.২ সেকেন্ড যথেষ্ট
+            await _rAll(rd, timeout=0.2)
             pkt = await _stPkt(uid, sx['key'], sx['iv'])
             wr.write(pkt)
             await wr.drain()
-            buf = await _rAll(rd, timeout=0.6) # রেসপন্স পাওয়ার জন্য ০.৬ সেকেন্ড যথেষ্ট
+            buf = await _rAll(rd, timeout=0.6)
             if not buf:
                 return {'status': 'OFFLINE'}
             pt, pl = await _scan(buf, sx['key'], sx['iv'])
@@ -595,7 +608,7 @@ def check_target_status_sync(uid):
     
     thread = Thread(target=_run, daemon=True)
     thread.start()
-    thread.join(timeout=3.0) # ১৫ সেকেন্ডের বদলে ৩ সেকেন্ড করা হয়েছে
+    thread.join(timeout=3.0)
     return result
 
 # ==================== PACKET CREATION FUNCTIONS ====================
@@ -776,7 +789,7 @@ def create_change_squad_size_packet(key, iv, target_uid, region="BD"):
             2: {
                 1: int(target_uid),
                 2: 1,
-                3: 2,
+                3: 4,
                 4: 1,
                 5: "\x1a",
                 8: 12,
@@ -801,6 +814,161 @@ def create_change_squad_size_packet(key, iv, target_uid, region="BD"):
     except Exception as e:
         print(f"{R}❌ Change squad size packet error: {e}{RS}")
         return None
+
+# ==================== LAG SPAM PACKET FUNCTIONS ====================
+
+def create_lag_packet_sync(key, iv, region="BD"):
+    """Vector A: Standard Lag Packet"""
+    try:
+        fields = {1: 15, 2: {1: 1124759936, 2: 1}}
+        packet = create_proto_sync(fields).hex()
+        p_type = "0514" if region.lower() == "ind" else ("0519" if region.lower() == "bd" else "0515")
+        encrypted = EnC_PacKeT(packet, key, iv)
+        length = len(encrypted) // 2
+        len_hex = DecodE_HeX(length)
+        padding = {2: "000000", 3: "00000", 4: "0000", 5: "000"}.get(len(len_hex), "000")
+        return bytes.fromhex(p_type + padding + len_hex + encrypted)
+    except: return b""
+
+def create_ready_packet_sync(key, iv, region="BD"):
+    """Vector B: Ready/Unready Cycle Packet"""
+    try:
+        fields = {1: 15, 2: {1: 1}}
+        packet = create_proto_sync(fields).hex()
+        p_type = "0514" if region.lower() == "ind" else ("0519" if region.lower() == "bd" else "0515")
+        encrypted = EnC_PacKeT(packet, key, iv)
+        length = len(encrypted) // 2
+        len_hex = DecodE_HeX(length)
+        padding = {2: "000000", 3: "00000", 4: "0000", 5: "000"}.get(len(len_hex), "000")
+        return bytes.fromhex(p_type + padding + len_hex + encrypted)
+    except: return b""
+
+def create_keep_alive_sync(key, iv, region="BD"):
+    """Vector C: Keep Alive Packet"""
+    try:
+        fields = {1: 99, 2: {1: int(time.time()), 2: 1}}
+        packet = create_proto_sync(fields).hex()
+        p_type = "0514" if region.lower() == "ind" else ("0519" if region.lower() == "bd" else "0515")
+        encrypted = EnC_PacKeT(packet, key, iv)
+        length = len(encrypted) // 2
+        len_hex = DecodE_HeX(length)
+        padding = {2: "000000", 3: "00000", 4: "0000", 5: "000"}.get(len(len_hex), "000")
+        return bytes.fromhex(p_type + padding + len_hex + encrypted)
+    except: return b""
+
+def lag_spam_worker():
+    """🚀 [GOD-MODE] Extreme LX-Sonic Burst Worker"""
+    global lag_spam_running, lag_spam_online_writer, lag_spam_key, lag_spam_iv, lag_spam_region
+    
+    print(f"{G}🌪️ Launching Extreme LX-Sonic Burst...{RS}")
+    
+    try:
+        # প্যাকেটগুলো আগে তৈরি করে রাখা হচ্ছে স্পিড বাড়ানোর জন্য
+        pkt_lag = create_lag_packet_sync(lag_spam_key, lag_spam_iv, lag_spam_region)
+        pkt_ready = create_ready_packet_sync(lag_spam_key, lag_spam_iv, lag_spam_region)
+        pkt_keep = create_keep_alive_sync(lag_spam_key, lag_spam_iv, lag_spam_region)
+
+        # Multi-Vector চেইন তৈরি (২০টি ল্যাগ + ১০টি রেডি + ৫টি কিপ অ্যালাইভ)
+        combined_vector = (pkt_lag * 20) + (pkt_ready * 10) + (pkt_keep * 5)
+        
+        # মেগা ব্যাচ (একসাথে ৫০০+ প্যাকেটের প্রেশার)
+        mega_batch = combined_vector * 25
+
+        while lag_spam_running:
+            if lag_spam_online_writer:
+                try:
+                    # সরাসরি সকেটে মেগা ডাটা পুশ করা
+                    lag_spam_online_writer.send(mega_batch)
+                except:
+                    break
+            
+            # নেটওয়ার্ক কার্ডকে সামান্য ব্রেথিং টাইম দেওয়া (০.০০০১ সেকেন্ড)
+            time.sleep(0.0001)
+            
+    except Exception as e:
+        print(f"{R}⚠️ Burst Interrupted: {e}{RS}")
+    
+    print(f"{R}🛑 LX-Sonic Burst Stopped{RS}")
+
+def start_lag_spam(target_uid=None):
+    """ল্যাগ স্প্যাম শুরু করার ফাংশন"""
+    global lag_spam_running, lag_spam_thread, lag_spam_online_writer, lag_spam_key, lag_spam_iv, lag_spam_region
+    
+    with lag_spam_lock:
+        if lag_spam_running:
+            return False, "Lag spam already running"
+        
+        # টার্গেট এর স্ট্যাটাস চেক করে তার কানেকশন তথ্য নেওয়া
+        if target_uid:
+            # টার্গেটের স্ট্যাটাস চেক
+            status_info = check_target_status_sync(target_uid)
+            if status_info.get('status') == 'ERROR':
+                return False, f"Cannot get connection info for {target_uid}"
+            
+            # যদি টার্গেট অনলাইন থাকে তাহলে তার কানেকশন ব্যবহার করবো
+            # নাহলে ডিফল্ট সেশন ব্যবহার করবো
+            sx = _sess()
+            if not sx:
+                return False, "No session available"
+            
+            # কানেকশন তৈরী
+            try:
+                sock = socket.create_connection((sx['ip'], sx['port']), timeout=10)
+                sock.send(bytes.fromhex(sx['auth']))
+                # হ্যান্ডশেকের জন্য কিছু সময় অপেক্ষা
+                time.sleep(0.2)
+                lag_spam_online_writer = sock
+                lag_spam_key = sx['key']
+                lag_spam_iv = sx['iv']
+                lag_spam_region = "BD"
+            except Exception as e:
+                return False, f"Connection error: {str(e)}"
+        else:
+            # ডিফল্ট সেশন ব্যবহার
+            sx = _sess()
+            if not sx:
+                return False, "No session available"
+            
+            try:
+                sock = socket.create_connection((sx['ip'], sx['port']), timeout=10)
+                sock.send(bytes.fromhex(sx['auth']))
+                time.sleep(0.2)
+                lag_spam_online_writer = sock
+                lag_spam_key = sx['key']
+                lag_spam_iv = sx['iv']
+                lag_spam_region = "BD"
+            except Exception as e:
+                return False, f"Connection error: {str(e)}"
+        
+        lag_spam_running = True
+        lag_spam_thread = Thread(target=lag_spam_worker, daemon=True)
+        lag_spam_thread.start()
+        
+        return True, "Lag spam started"
+
+def stop_lag_spam():
+    """ল্যাগ স্প্যাম বন্ধ করার ফাংশন"""
+    global lag_spam_running, lag_spam_online_writer
+    
+    with lag_spam_lock:
+        if not lag_spam_running:
+            return False, "Lag spam not running"
+        
+        lag_spam_running = False
+        
+        # সকেট বন্ধ করা
+        try:
+            if lag_spam_online_writer:
+                lag_spam_online_writer.close()
+        except:
+            pass
+        lag_spam_online_writer = None
+        
+        return True, "Lag spam stopped"
+
+def is_lag_spam_running():
+    """ল্যাগ স্প্যাম চলছে কিনা চেক করে"""
+    return lag_spam_running
 
 # ==================== SPAM WORKER FUNCTIONS ====================
 def send_room_badge_spam(client, target_uid, badge_value):
@@ -828,7 +996,6 @@ def send_room_badge_spam(client, target_uid, badge_value):
         except:
             pass
 
-        # লুপ সরিয়ে দেওয়া হয়েছে, এখন সরাসরি badge_value ব্যবহার করবে
         try:
             badge_pkt = create_badge_join_packet(client.key, client.iv, target_uid, badge_value)
             if badge_pkt:
@@ -879,7 +1046,6 @@ def send_group_badge_spam(client, target_uid, badge_value):
             except:
                 pass
         
-        # লুপ সরিয়ে দেওয়া হয়েছে, এখন সরাসরি badge_value ব্যবহার করবে
         try:
             badge_pkt = create_badge_join_packet(client.key, client.iv, target_uid, badge_value)
             if badge_pkt:
@@ -1065,7 +1231,6 @@ def spam_worker(target_uid, spam_type='full'):
     round_number = 0
     is_spamming = True
     
-    # ব্যাজ ভ্যালুগুলোকে একটি লিস্টে নিয়ে আসা
     badge_vals = list(BADGES.values())
 
     while True:
@@ -1097,23 +1262,19 @@ def spam_worker(target_uid, spam_type='full'):
 
         round_number += 1
 
-        # enumerate ব্যবহার করে ইনডেক্স (i) বের করা হয়েছে
         for i, client in enumerate(clients_list):
             with active_spam_lock:
                 if target_uid not in active_spam_targets:
                     break
 
             try:
-                # ইনডেক্স অনুযায়ী প্রতিটি বোটকে আলাদা ব্যাজ দেওয়া হচ্ছে
                 assigned_badge = badge_vals[i % len(badge_vals)]
                 
                 is_group_account = getattr(client, 'is_group_account', False)
                 
                 if is_group_account:
-                    # সংশোধিত ফাংশন কল (badge_value সহ)
                     total_requests += send_group_badge_spam(client, target_uid, assigned_badge)
                 else:
-                    # সংশোধিত ফাংশন কল (badge_value সহ)
                     total_requests += send_room_badge_spam(client, target_uid, assigned_badge)
             except Exception as e:
                 pass
@@ -1252,7 +1413,8 @@ def get_spam_status():
         'active_targets': active_targets,
         'active_count': len(active_targets),
         'accounts_count': accounts_count,
-        'accounts_list': accounts_list[:50]
+        'accounts_list': accounts_list[:50],
+        'lag_spam_running': is_lag_spam_running()
     }
 
 # ==================== FF CLIENT ====================
@@ -1263,7 +1425,7 @@ class FF_CLient():
         self.is_group_account = is_group_account
         self.key = None
         self.iv = None
-        self.running = True  # ক্লায়েন্ট রানিং কিনা ট্র্যাক করার জন্য
+        self.running = True
         self.Get_FiNal_ToKen_0115()
 
     def Connect_SerVer_OnLine(self, Token, tok, host, port, key, iv, host2, port2):
@@ -1310,6 +1472,12 @@ class FF_CLient():
                 connected_clients[self.id] = self
                 print(f"{G}✅ Registered: {self.id} (Type: {'GROUP' if self.is_group_account else 'ROOM'}){RS}")
         
+        # চেক করা হচ্ছে এই অ্যাকাউন্টটি গ্রুপ লিডার কিনা
+        if self.is_group_account:
+            with group_leader_lock:
+                group_leader_accounts.add(self.id)
+                print(f"{Y}👑 Group Leader Account: {self.id}{RS}")
+        
         while self.running:
             try:
                 self.CliEnts.settimeout(30)
@@ -1321,7 +1489,6 @@ class FF_CLient():
             except Exception as e:
                 break
         
-        # রিকানেক্ট করার চেষ্টা
         if self.running:
             time.sleep(2)
             self.Connect_SerVer(Token, tok, host, port, key, iv, host2, port2)
@@ -1527,7 +1694,6 @@ class FF_CLient():
             return self.Get_FiNal_ToKen_0115()
     
     def stop(self):
-        """ক্লায়েন্ট বন্ধ করার জন্য"""
         self.running = False
         try:
             if hasattr(self, 'CliEnts'):
@@ -1540,68 +1706,51 @@ class FF_CLient():
         except:
             pass
 
-# ==================== ACCOUNT RUNNER & RESETTER (REMOVED AUTO RESET) ====================
+# ==================== ACCOUNT RUNNER ====================
 
 def start_account(account):
-    """প্রতিটি অ্যাকাউন্টের লগইন প্রসেস শুরু করে"""
     try:
         is_group = account.get('type', '') == 'group'
         print(f"{C}🚀 [SPAWN] Thread starting for: {account['id']} ({'GROUP' if is_group else 'ROOM'}){RS}")
-        
-        # ক্লায়েন্ট অবজেক্ট তৈরি (এটি নিজে থেকেই লগইন শুরু করবে)
         FF_CLient(account['id'], account['password'], is_group_account=is_group)
-        
     except Exception as e:
-        # যদি কোনো এরর হয়, ৩ সেকেন্ড অপেক্ষা করে আবার চেষ্টা করবে
         print(f"{R}❌ [ERROR] Login failed for {account['id']}: {e}. Retrying in 3s...{RS}")
         time.sleep(3)
         start_account(account)
 
 def run_accounts():
-    """সবগুলো অ্যাকাউন্টকে থ্রেড এর মাধ্যমে রান করে"""
     global ACCOUNTS
-    
     print(f"{Y}⚙️ [SYSTEM] Triggering login sequence for {len(ACCOUNTS)} accounts...{RS}")
-    
     for acc in ACCOUNTS:
-        # গুরুত্বপূর্ণ: এখানে কোনো is_resetting চেক রাখা যাবে না
         t = threading.Thread(target=start_account, args=(acc,), daemon=True)
         t.start()
-        time.sleep(0.5) # একসাথেই সব না পাঠিয়ে সামান্য গ্যাপ রাখা (Rate limit এড়াতে)
+        time.sleep(0.5)
 
 def reset_accounts():
-    """পুরো সিস্টেম রিসেট করে নতুন করে কানেক্ট করে"""
     global is_resetting, ACCOUNTS
-    
     if is_resetting:
         return False, "Reset is already in progress..."
-    
     is_resetting = True
     print(f"\n{Y}🔄 [SYSTEM] RESET INITIATED: Cleaning up connections...{RS}")
-    
     try:
-        # ১. বর্তমান সব কানেকশন বন্ধ করা
         with connected_clients_lock:
             uids = list(connected_clients.keys())
             print(f"{R}🧹 Closing {len(uids)} active connections...{RS}")
             for uid in uids:
                 try:
                     client = connected_clients[uid]
-                    client.stop() # ক্লায়েন্টকে থামিয়ে দেওয়া
+                    client.stop()
                 except:
                     pass
             connected_clients.clear()
         
-        # ২. একটু সময় দেওয়া যাতে সকেটগুলো ফ্রি হয়
+        # গ্রুপ লিডার লিস্ট ক্লিয়ার
+        with group_leader_lock:
+            group_leader_accounts.clear()
+        
         time.sleep(1)
-        
-        # ৩. ফ্রেশভাবে অ্যাকাউন্ট লিস্ট লোড করা
         ACCOUNTS = load_unified_accounts(ACCOUNTS_FILE)
-        
-        # ৪. রিসেট লক খুলে দেওয়া (যাতে run_accounts কাজ করতে পারে)
         is_resetting = False
-        
-        # ৫. এবার রান করা
         if len(ACCOUNTS) > 0:
             run_accounts()
             print(f"{G}✅ [SYSTEM] RESET SUCCESSFUL: Connecting {len(ACCOUNTS)} accounts...{RS}\n")
@@ -1609,7 +1758,6 @@ def reset_accounts():
         else:
             print(f"{R}⚠️ [SYSTEM] RESET COMPLETED: But no accounts found in {ACCOUNTS_FILE}!{RS}\n")
             return False, "Reset done, but accs.txt is empty."
-
     except Exception as e:
         is_resetting = False
         print(f"{R}❌ [FATAL ERROR] Reset failed: {e}{RS}")
@@ -1644,10 +1792,8 @@ def targets_page():
             session['targets_view'] = True
             return redirect(url_for('targets_page'))
         return render_template_string(TARGETS_LOGIN_TEMPLATE, error='Invalid Password!')
-    
     if not session.get('targets_view'):
         return render_template_string(TARGETS_LOGIN_TEMPLATE, error=None)
-    
     return render_template_string(TARGETS_TEMPLATE)
 
 @app.route('/targets/logout')
@@ -1706,225 +1852,94 @@ def stream_targets():
                     })
             yield f"data: {json.dumps(targets)}\n\n"
             time.sleep(3)
-    
     return Response(stream_with_context(generate()), mimetype='text/event-stream')
 
-# ==================== API FOR REFRESH (GET & POST WITH PASSWORD SUPPORT) ====================
+# ==================== API ROUTES ====================
 
 @app.route('/api/refresh-all-status', methods=['GET', 'POST'])
 def api_refresh_all_status():
-    """API - সব টার্গেটের স্ট্যাটাস রিফ্রেশ করে (GET & POST উভয় মেথড সাপোর্ট)"""
-    
-    # পাসওয়ার্ড চেক করা
     if request.method == 'GET':
         password = request.args.get('pass', '')
     else:
         data = request.get_json() or {}
         password = data.get('pass', '') or request.args.get('pass', '')
-    
-    # সেশন চেক (যদি লগইন করা থাকে)
     is_logged_in = session.get('logged_in', False)
-    
-    # পাসওয়ার্ড বা সেশন ভেরিফাই
     if not is_logged_in and password != ADMIN_PASSWORD:
-        return jsonify({
-            'success': False,
-            'message': 'Unauthorized! Please login or provide valid password.',
-            'error_code': 'UNAUTHORIZED'
-        }), 401
-    
+        return jsonify({'success': False, 'message': 'Unauthorized!'}), 401
     try:
         with active_spam_lock:
             targets = list(active_spam_targets.keys())
-        
         if not targets:
-            return jsonify({
-                'success': True,
-                'message': 'No active targets to refresh',
-                'refreshed': 0,
-                'targets': []
-            })
-        
-        # ব্যাকগ্রাউন্ডে রিফ্রেশ করার জন্য থ্রেড
+            return jsonify({'success': True, 'message': 'No active targets to refresh', 'refreshed': 0, 'targets': []})
         def refresh_worker():
             for uid in targets:
                 try:
                     update_target_status(uid)
-                    time.sleep(0.5)  # রেট লিমিট এড়ানোর জন্য
+                    time.sleep(0.5)
                 except Exception as e:
                     print(f"{R}❌ Error refreshing {uid}: {e}{RS}")
-        
         thread = Thread(target=refresh_worker, daemon=True)
         thread.start()
-        
-        return jsonify({
-            'success': True,
-            'message': f'Refreshing status for {len(targets)} targets...',
-            'refreshed': len(targets),
-            'targets': targets,
-            'status': 'started',
-            'method': request.method,
-            'authenticated_by': 'session' if is_logged_in else 'password'
-        })
-        
+        return jsonify({'success': True, 'message': f'Refreshing status for {len(targets)} targets...', 'refreshed': len(targets), 'targets': targets, 'status': 'started'})
     except Exception as e:
-        return jsonify({
-            'success': False,
-            'message': f'Error: {str(e)}',
-            'refreshed': 0
-        }), 500
-
+        return jsonify({'success': False, 'message': f'Error: {str(e)}', 'refreshed': 0}), 500
 
 @app.route('/api/refresh-target-status/<uid>', methods=['GET', 'POST'])
 def api_refresh_target_status(uid):
-    """API - একটি নির্দিষ্ট টার্গেটের স্ট্যাটাস রিফ্রেশ করে (GET & POST উভয় মেথড সাপোর্ট)"""
-    
-    # পাসওয়ার্ড চেক করা
     if request.method == 'GET':
         password = request.args.get('pass', '')
     else:
         data = request.get_json() or {}
         password = data.get('pass', '') or request.args.get('pass', '')
-    
     is_logged_in = session.get('logged_in', False)
-    
     if not is_logged_in and password != ADMIN_PASSWORD:
-        return jsonify({
-            'success': False,
-            'message': 'Unauthorized! Please login or provide valid password.',
-            'error_code': 'UNAUTHORIZED'
-        }), 401
-    
+        return jsonify({'success': False, 'message': 'Unauthorized!'}), 401
     try:
         if not uid or not uid.isdigit():
-            return jsonify({
-                'success': False,
-                'message': 'Invalid UID format!'
-            }), 400
-        
+            return jsonify({'success': False, 'message': 'Invalid UID format!'}), 400
         with active_spam_lock:
             if uid not in active_spam_targets:
-                return jsonify({
-                    'success': False,
-                    'message': f'Target {uid} is not active'
-                }), 404
-        
+                return jsonify({'success': False, 'message': f'Target {uid} is not active'}), 404
         status = update_target_status(uid)
-        
-        # Get target details
         with active_spam_lock:
             info = active_spam_targets.get(uid, {})
             elapsed = (datetime.now() - info.get('start_time', datetime.now())).total_seconds() / 60 if info.get('start_time') else 0
-        
         cache_info = target_status_cache.get(uid, {})
-        
-        return jsonify({
-            'success': True,
-            'message': f'Status updated for {uid}',
-            'uid': uid,
-            'status': status,
-            'method': request.method,
-            'authenticated_by': 'session' if is_logged_in else 'password',
-            'details': {
-                'status': status,
-                'mode': cache_info.get('mode', ''),
-                'squad_leader': cache_info.get('squad_leader', ''),
-                'time_playing': cache_info.get('time_playing', ''),
-                'is_online': cache_info.get('is_online', False),
-                'elapsed_minutes': int(elapsed),
-                'last_check': info.get('last_check', datetime.now()).strftime('%H:%M:%S')
-            }
-        })
-        
+        return jsonify({'success': True, 'message': f'Status updated for {uid}', 'uid': uid, 'status': status, 'details': {'status': status, 'mode': cache_info.get('mode', ''), 'squad_leader': cache_info.get('squad_leader', ''), 'time_playing': cache_info.get('time_playing', ''), 'is_online': cache_info.get('is_online', False), 'elapsed_minutes': int(elapsed), 'last_check': info.get('last_check', datetime.now()).strftime('%H:%M:%S')}})
     except Exception as e:
-        return jsonify({
-            'success': False,
-            'message': f'Error: {str(e)}'
-        }), 500
-
+        return jsonify({'success': False, 'message': f'Error: {str(e)}'}), 500
 
 @app.route('/api/check-target/<uid>', methods=['GET', 'POST'])
 def api_check_target(uid):
-    """API - একটি টার্গেটের কারেন্ট স্ট্যাটাস চেক করে (GET & POST উভয় মেথড সাপোর্ট)"""
-    
     if request.method == 'GET':
         password = request.args.get('pass', '')
     else:
         data = request.get_json() or {}
         password = data.get('pass', '') or request.args.get('pass', '')
-    
     is_logged_in = session.get('logged_in', False)
-    
     if not is_logged_in and password != ADMIN_PASSWORD:
-        return jsonify({
-            'success': False,
-            'message': 'Unauthorized! Please login or provide valid password.',
-            'error_code': 'UNAUTHORIZED'
-        }), 401
-    
+        return jsonify({'success': False, 'message': 'Unauthorized!'}), 401
     try:
         if not uid or not uid.isdigit():
-            return jsonify({
-                'success': False,
-                'message': 'Invalid UID format!'
-            }), 400
-        
-        # Check if target is active in spam
+            return jsonify({'success': False, 'message': 'Invalid UID format!'}), 400
         is_active = uid in active_spam_targets
-        
-        # Get status
         status_info = check_target_status_sync(uid)
         status = status_info.get('status', 'UNKNOWN')
-        
-        # Get cached info
         cache_info = target_status_cache.get(uid, {})
-        
-        return jsonify({
-            'success': True,
-            'uid': uid,
-            'is_active_target': is_active,
-            'status': status,
-            'method': request.method,
-            'authenticated_by': 'session' if is_logged_in else 'password',
-            'details': {
-                'status': status,
-                'mode': status_info.get('mode', ''),
-                'squad_owner': status_info.get('squad_owner', ''),
-                'room_uid': status_info.get('room_uid', ''),
-                'players': status_info.get('players', ''),
-                'time_playing': status_info.get('time_playing', ''),
-                'is_online': status not in ['OFFLINE', 'NO_RESPONSE', 'ERROR', 'TIMEOUT'],
-                'last_check': cache_info.get('last_check', 'Never'),
-                'room_info': status_info.get('room_info', {})
-            }
-        })
-        
+        return jsonify({'success': True, 'uid': uid, 'is_active_target': is_active, 'status': status, 'details': {'status': status, 'mode': status_info.get('mode', ''), 'squad_owner': status_info.get('squad_owner', ''), 'room_uid': status_info.get('room_uid', ''), 'players': status_info.get('players', ''), 'time_playing': status_info.get('time_playing', ''), 'is_online': status not in ['OFFLINE', 'NO_RESPONSE', 'ERROR', 'TIMEOUT'], 'last_check': cache_info.get('last_check', 'Never'), 'room_info': status_info.get('room_info', {})}})
     except Exception as e:
-        return jsonify({
-            'success': False,
-            'message': f'Error: {str(e)}'
-        }), 500
-
+        return jsonify({'success': False, 'message': f'Error: {str(e)}'}), 500
 
 @app.route('/api/all-targets-status', methods=['GET', 'POST'])
 def api_all_targets_status():
-    """API - সব টার্গেটের স্ট্যাটাস দেখায় (GET & POST উভয় মেথড সাপোর্ট)"""
-    
     if request.method == 'GET':
         password = request.args.get('pass', '')
     else:
         data = request.get_json() or {}
         password = data.get('pass', '') or request.args.get('pass', '')
-    
     is_logged_in = session.get('logged_in', False)
-    
     if not is_logged_in and password != ADMIN_PASSWORD:
-        return jsonify({
-            'success': False,
-            'message': 'Unauthorized! Please login or provide valid password.',
-            'error_code': 'UNAUTHORIZED'
-        }), 401
-    
+        return jsonify({'success': False, 'message': 'Unauthorized!'}), 401
     try:
         with active_spam_lock:
             targets = []
@@ -1932,44 +1947,13 @@ def api_all_targets_status():
                 elapsed = (datetime.now() - info.get('start_time', datetime.now())).total_seconds() / 60 if info.get('start_time') else 0
                 status = info.get('status', 'UNKNOWN')
                 cache_info = target_status_cache.get(uid, {})
-                
-                targets.append({
-                    'uid': uid,
-                    'status': status,
-                    'mode': cache_info.get('mode', ''),
-                    'squad_leader': cache_info.get('squad_leader', ''),
-                    'time_playing': cache_info.get('time_playing', ''),
-                    'is_online': info.get('is_online', False),
-                    'elapsed_minutes': int(elapsed),
-                    'last_check': info.get('last_check', datetime.now()).strftime('%H:%M:%S'),
-                    'type': info.get('type', 'full'),
-                    'is_squad_leader': info.get('is_squad_leader', False),
-                    'original_target': info.get('original_target', '')
-                })
-        
-        return jsonify({
-            'success': True,
-            'total_targets': len(targets),
-            'targets': targets,
-            'timestamp': datetime.now().isoformat(),
-            'method': request.method,
-            'authenticated_by': 'session' if is_logged_in else 'password'
-        })
-        
+                targets.append({'uid': uid, 'status': status, 'mode': cache_info.get('mode', ''), 'squad_leader': cache_info.get('squad_leader', ''), 'time_playing': cache_info.get('time_playing', ''), 'is_online': info.get('is_online', False), 'elapsed_minutes': int(elapsed), 'last_check': info.get('last_check', datetime.now()).strftime('%H:%M:%S'), 'type': info.get('type', 'full'), 'is_squad_leader': info.get('is_squad_leader', False), 'original_target': info.get('original_target', '')})
+        return jsonify({'success': True, 'total_targets': len(targets), 'targets': targets, 'timestamp': datetime.now().isoformat()})
     except Exception as e:
-        return jsonify({
-            'success': False,
-            'message': f'Error: {str(e)}'
-        }), 500
-
-
-# ==================== BATCH REFRESH API ====================
+        return jsonify({'success': False, 'message': f'Error: {str(e)}'}), 500
 
 @app.route('/api/refresh-batch-status', methods=['GET', 'POST'])
 def api_refresh_batch_status():
-    """API - একাধিক টার্গেটের স্ট্যাটাস রিফ্রেশ করে"""
-    
-    # পাসওয়ার্ড চেক
     if request.method == 'GET':
         password = request.args.get('pass', '')
         uids_param = request.args.get('uids', '')
@@ -1987,37 +1971,16 @@ def api_refresh_batch_status():
                 uids = list(active_spam_targets.keys())
         elif isinstance(uids, str):
             uids = [uid.strip() for uid in uids.split(',') if uid.strip().isdigit()]
-    
     is_logged_in = session.get('logged_in', False)
-    
     if not is_logged_in and password != ADMIN_PASSWORD:
-        return jsonify({
-            'success': False,
-            'message': 'Unauthorized! Please login or provide valid password.',
-            'error_code': 'UNAUTHORIZED'
-        }), 401
-    
+        return jsonify({'success': False, 'message': 'Unauthorized!'}), 401
     try:
         if not uids:
-            return jsonify({
-                'success': True,
-                'message': 'No targets to refresh',
-                'refreshed': 0,
-                'targets': []
-            })
-        
-        # ফিল্টার করে শুধু অ্যাক্টিভ টার্গেট রাখা
+            return jsonify({'success': True, 'message': 'No targets to refresh', 'refreshed': 0, 'targets': []})
         with active_spam_lock:
             active_uids = [uid for uid in uids if uid in active_spam_targets]
-        
         if not active_uids:
-            return jsonify({
-                'success': False,
-                'message': 'No active targets found in the provided list',
-                'refreshed': 0
-            }), 404
-        
-        # ব্যাকগ্রাউন্ডে রিফ্রেশ
+            return jsonify({'success': False, 'message': 'No active targets found', 'refreshed': 0}), 404
         def refresh_worker():
             for uid in active_uids:
                 try:
@@ -2025,117 +1988,96 @@ def api_refresh_batch_status():
                     time.sleep(0.3)
                 except Exception as e:
                     print(f"{R}❌ Error refreshing {uid}: {e}{RS}")
-        
         thread = Thread(target=refresh_worker, daemon=True)
         thread.start()
-        
-        return jsonify({
-            'success': True,
-            'message': f'Refreshing status for {len(active_uids)} targets...',
-            'refreshed': len(active_uids),
-            'targets': active_uids,
-            'status': 'started',
-            'method': request.method,
-            'authenticated_by': 'session' if is_logged_in else 'password'
-        })
-        
+        return jsonify({'success': True, 'message': f'Refreshing status for {len(active_uids)} targets...', 'refreshed': len(active_uids), 'targets': active_uids, 'status': 'started'})
     except Exception as e:
-        return jsonify({
-            'success': False,
-            'message': f'Error: {str(e)}',
-            'refreshed': 0
-        }), 500
-
-
-# ==================== REFRESH STATUS WITH DETAILS ====================
+        return jsonify({'success': False, 'message': f'Error: {str(e)}', 'refreshed': 0}), 500
 
 @app.route('/api/refresh-status-with-details', methods=['GET', 'POST'])
 @login_required
 def api_refresh_status_with_details():
-    """API - সব টার্গেট রিফ্রেশ করে ডিটেইলস সহ রিটার্ন করে"""
     try:
         with active_spam_lock:
             targets = list(active_spam_targets.keys())
-        
         if not targets:
-            return jsonify({
-                'success': True,
-                'message': 'No active targets',
-                'targets': []
-            })
-        
+            return jsonify({'success': True, 'message': 'No active targets', 'targets': []})
         refreshed_targets = []
-        
         for uid in targets:
             try:
                 status = update_target_status(uid)
                 with active_spam_lock:
                     info = active_spam_targets.get(uid, {})
                     elapsed = (datetime.now() - info.get('start_time', datetime.now())).total_seconds() / 60 if info.get('start_time') else 0
-                
                 cache_info = target_status_cache.get(uid, {})
-                
-                refreshed_targets.append({
-                    'uid': uid,
-                    'status': status,
-                    'mode': cache_info.get('mode', ''),
-                    'squad_leader': cache_info.get('squad_leader', ''),
-                    'time_playing': cache_info.get('time_playing', ''),
-                    'is_online': info.get('is_online', False),
-                    'elapsed_minutes': int(elapsed)
-                })
-                
+                refreshed_targets.append({'uid': uid, 'status': status, 'mode': cache_info.get('mode', ''), 'squad_leader': cache_info.get('squad_leader', ''), 'time_playing': cache_info.get('time_playing', ''), 'is_online': info.get('is_online', False), 'elapsed_minutes': int(elapsed)})
                 time.sleep(0.3)
-                
             except Exception as e:
                 print(f"{R}❌ Error refreshing {uid}: {e}{RS}")
-                refreshed_targets.append({
-                    'uid': uid,
-                    'status': 'ERROR',
-                    'error': str(e)
-                })
-        
-        return jsonify({
-            'success': True,
-            'message': f'Refreshed {len(refreshed_targets)} targets',
-            'refreshed': len(refreshed_targets),
-            'targets': refreshed_targets,
-            'method': request.method,
-            'timestamp': datetime.now().isoformat()
-        })
-        
+                refreshed_targets.append({'uid': uid, 'status': 'ERROR', 'error': str(e)})
+        return jsonify({'success': True, 'message': f'Refreshed {len(refreshed_targets)} targets', 'refreshed': len(refreshed_targets), 'targets': refreshed_targets, 'timestamp': datetime.now().isoformat()})
     except Exception as e:
-        return jsonify({
-            'success': False,
-            'message': f'Error: {str(e)}'
-        }), 500
+        return jsonify({'success': False, 'message': f'Error: {str(e)}'}), 500
 
-# ==================== API ROUTES ====================
+# ==================== LAG SPAM API ROUTES ====================
+
+@app.route('/api/lag/start', methods=['POST'])
+@login_required
+def api_lag_start():
+    """ল্যাগ স্প্যাম শুরু করার API"""
+    data = request.get_json() or {}
+    target_uid = data.get('uid', '').strip()
+    
+    if target_uid and not target_uid.isdigit():
+        return jsonify({'success': False, 'message': 'Invalid UID format!'}), 400
+    
+    success, message = start_lag_spam(target_uid if target_uid else None)
+    return jsonify({'success': success, 'message': message})
+
+@app.route('/api/lag/stop', methods=['POST'])
+@login_required
+def api_lag_stop():
+    """ল্যাগ স্প্যাম বন্ধ করার API"""
+    success, message = stop_lag_spam()
+    return jsonify({'success': success, 'message': message})
+
+@app.route('/api/lag/status', methods=['GET'])
+@login_required
+def api_lag_status():
+    """ল্যাগ স্প্যামের স্ট্যাটাস দেখানোর API"""
+    return jsonify({
+        'success': True,
+        'running': is_lag_spam_running()
+    })
+
+# ==================== GROUP LEADER API ROUTES ====================
+
+@app.route('/api/group-leaders', methods=['GET'])
+@login_required
+def api_group_leaders():
+    """গ্রুপ লিডার অ্যাকাউন্টগুলোর লিস্ট দেখানোর API"""
+    with group_leader_lock:
+        leaders = list(group_leader_accounts)
+    return jsonify({
+        'success': True,
+        'count': len(leaders),
+        'leaders': leaders
+    })
 
 @app.route('/api/profile-info/<uid>')
 def get_profile_info(uid):
     if not uid or not uid.isdigit():
         return jsonify({'success': False, 'message': 'Invalid UID!'}), 400
-    
     try:
         url = f"https://mahir-info-api.vercel.app/info?uid={uid}"
-        resp = requests.get(url, timeout=10, headers={
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-        })
-        
+        resp = requests.get(url, timeout=10, headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'})
         if resp.status_code == 200:
             return jsonify(resp.json())
-        
         url2 = f"https://mahir-info-api.vercel.app/short_info?uid={uid}"
-        resp2 = requests.get(url2, timeout=10, headers={
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-        })
-        
+        resp2 = requests.get(url2, timeout=10, headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'})
         if resp2.status_code == 200:
             return jsonify(resp2.json())
-        
         return jsonify({'success': False, 'message': 'Profile not found'}), 404
-        
     except requests.exceptions.Timeout:
         return jsonify({'success': False, 'message': 'Request timeout'}), 504
     except Exception as e:
@@ -2145,13 +2087,10 @@ def get_profile_info(uid):
 def api_get_start_spam():
     uid = request.args.get('uid')
     password = request.args.get('pass')
-    
     if password != ADMIN_PASSWORD:
         return jsonify({'success': False, 'message': 'Invalid password!'}), 401
-    
     if not uid or not uid.isdigit():
         return jsonify({'success': False, 'message': 'Invalid UID format!'}), 400
-    
     success, message = start_spam(uid, 'full')
     return jsonify({'success': success, 'message': message})
 
@@ -2160,7 +2099,6 @@ def api_get_start_spam():
 def api_get_start_spam_path(uid):
     if not uid or not uid.isdigit():
         return jsonify({'success': False, 'message': 'Invalid UID format!'}), 400
-    
     success, message = start_spam(uid, 'full')
     return jsonify({'success': success, 'message': message})
 
@@ -2168,13 +2106,10 @@ def api_get_start_spam_path(uid):
 def api_get_stop_spam():
     uid = request.args.get('uid')
     password = request.args.get('pass')
-    
     if password != ADMIN_PASSWORD:
         return jsonify({'success': False, 'message': 'Invalid password!'}), 401
-    
     if not uid or not uid.isdigit():
         return jsonify({'success': False, 'message': 'Invalid UID format!'}), 400
-    
     success, message = stop_spam(uid)
     return jsonify({'success': success, 'message': message})
 
@@ -2183,17 +2118,14 @@ def api_get_stop_spam():
 def api_get_stop_spam_path(uid):
     if not uid or not uid.isdigit():
         return jsonify({'success': False, 'message': 'Invalid UID format!'}), 400
-    
     success, message = stop_spam(uid)
     return jsonify({'success': success, 'message': message})
 
 @app.route('/api/stop-all', methods=['GET'])
 def api_get_stop_all():
     password = request.args.get('pass')
-    
     if password != ADMIN_PASSWORD:
         return jsonify({'success': False, 'message': 'Invalid password!'}), 401
-    
     success, message = stop_all_spam()
     return jsonify({'success': success, 'message': message})
 
@@ -2206,10 +2138,8 @@ def api_get_stop_all_session():
 @app.route('/api/status', methods=['GET'])
 def api_get_status():
     password = request.args.get('pass')
-    
     if password != ADMIN_PASSWORD:
         return jsonify({'success': False, 'message': 'Invalid password!'}), 401
-    
     return jsonify({'success': True, 'data': get_spam_status()})
 
 @app.route('/api/status', methods=['GET'])
@@ -2220,10 +2150,8 @@ def api_get_status_session():
 @app.route('/api/accounts', methods=['GET'])
 def api_get_accounts():
     password = request.args.get('pass')
-    
     if password != ADMIN_PASSWORD:
         return jsonify({'success': False, 'message': 'Invalid password!'}), 401
-    
     with connected_clients_lock:
         accounts = list(connected_clients.keys())
     return jsonify({'success': True, 'accounts': accounts})
@@ -2243,12 +2171,7 @@ def api_get_accounts_count():
         total = len(ACCOUNTS)
         group = len([a for a in ACCOUNTS if a.get('type') == 'group'])
         room = len([a for a in ACCOUNTS if a.get('type') == 'room'])
-        return jsonify({
-            'success': True,
-            'total': total,
-            'group': group,
-            'room': room
-        })
+        return jsonify({'success': True, 'total': total, 'group': group, 'room': room})
     except Exception as e:
         return jsonify({'success': False, 'message': str(e)}), 500
 
@@ -2257,28 +2180,17 @@ def api_get_accounts_count():
 def upload_accs():
     if 'file' not in request.files:
         return jsonify({'success': False, 'message': 'No file uploaded'}), 400
-    
     file = request.files['file']
     if not file.filename.endswith('.txt'):
         return jsonify({'success': False, 'message': 'Only .txt files allowed'}), 400
-    
     try:
         content = file.read().decode('utf-8')
         with open('accs.txt', 'w', encoding='utf-8') as f:
             f.write(content)
-        
         global ACCOUNTS
         ACCOUNTS = load_unified_accounts('accs.txt')
-        
         Thread(target=run_accounts, daemon=True).start()
-        
-        return jsonify({
-            'success': True, 
-            'message': 'Unified accounts uploaded', 
-            'total': len(ACCOUNTS),
-            'group': len([a for a in ACCOUNTS if a['type'] == 'group']),
-            'room': len([a for a in ACCOUNTS if a['type'] == 'room'])
-        })
+        return jsonify({'success': True, 'message': 'Unified accounts uploaded', 'total': len(ACCOUNTS), 'group': len([a for a in ACCOUNTS if a['type'] == 'group']), 'room': len([a for a in ACCOUNTS if a['type'] == 'room'])})
     except Exception as e:
         return jsonify({'success': False, 'message': f'Error: {str(e)}'}), 500
 
@@ -2294,7 +2206,6 @@ def download_accs():
 @app.route('/api/reset-accounts', methods=['POST'])
 @login_required
 def api_reset_accounts():
-    """API endpoint for resetting all accounts"""
     success, message = reset_accounts()
     return jsonify({'success': success, 'message': message})
 
@@ -2303,22 +2214,18 @@ def api_reset_accounts():
 def api_post_start_spam():
     data = request.get_json()
     uid = data.get('uid', '').strip()
-    
     if not uid or not uid.isdigit():
         return jsonify({'success': False, 'message': 'Valid UID required!'}), 400
-    
     if ',' in uid:
         uids = [u.strip() for u in uid.split(',') if u.strip().isdigit()]
     elif ' ' in uid:
         uids = [u.strip() for u in uid.split() if u.strip().isdigit()]
     else:
         uids = [uid]
-    
     results = []
     for target in uids:
         success, message = start_spam(target, 'full')
         results.append({'uid': target, 'success': success, 'message': message})
-    
     return jsonify({'success': True, 'results': results})
 
 @app.route('/api/stop', methods=['POST'])
@@ -2326,10 +2233,8 @@ def api_post_start_spam():
 def api_post_stop_spam():
     data = request.get_json()
     uid = data.get('uid', '').strip()
-    
     if not uid or not uid.isdigit():
         return jsonify({'success': False, 'message': 'Valid UID required!'}), 400
-    
     success, message = stop_spam(uid)
     return jsonify({'success': success, 'message': message})
 
@@ -2344,7 +2249,6 @@ def api_targets():
     password = request.args.get('pass')
     if password != ADMIN_PASSWORD and password != TARGETS_PASSWORD and not session.get('logged_in') and not session.get('targets_view'):
         return jsonify({'success': False, 'message': 'Unauthorized'}), 401
-    
     with active_spam_lock:
         targets = []
         for uid, info in active_spam_targets.items():
@@ -2354,7 +2258,6 @@ def api_targets():
             is_online = info.get('is_online', False)
             is_squad_leader = info.get('is_squad_leader', False)
             original_target = info.get('original_target', '')
-            
             status_display = status
             if status == 'SOLO':
                 status_display = '🟢 Solo'
@@ -2368,24 +2271,8 @@ def api_targets():
                 status_display = '⚪ Offline'
             else:
                 status_display = '⚪ Unknown'
-            
             cache_info = target_status_cache.get(uid, {})
-            targets.append({
-                'uid': uid,
-                'type': 'SQUAD' if is_squad_leader else info.get('type', 'full'),
-                'elapsed_minutes': int(elapsed/60),
-                'banner_url': f"https://mahir-banner-api.vercel.app/profile?uid={uid}",
-                'status': status,
-                'status_display': status_display,
-                'squad_leader': squad_leader,
-                'squad_owner': squad_leader,
-                'mode': cache_info.get('mode', ''),
-                'time_playing': cache_info.get('time_playing', ''),
-                'last_check': info.get('last_check', datetime.now()).strftime('%H:%M:%S'),
-                'is_online': is_online,
-                'is_squad_leader': is_squad_leader,
-                'original_target': original_target
-            })
+            targets.append({'uid': uid, 'type': 'SQUAD' if is_squad_leader else info.get('type', 'full'), 'elapsed_minutes': int(elapsed/60), 'banner_url': f"https://mahir-banner-api.vercel.app/profile?uid={uid}", 'status': status, 'status_display': status_display, 'squad_leader': squad_leader, 'squad_owner': squad_leader, 'mode': cache_info.get('mode', ''), 'time_playing': cache_info.get('time_playing', ''), 'last_check': info.get('last_check', datetime.now()).strftime('%H:%M:%S'), 'is_online': is_online, 'is_squad_leader': is_squad_leader, 'original_target': original_target})
     return jsonify({'success': True, 'targets': targets})
 
 @app.route('/health')
@@ -2393,47 +2280,32 @@ def health_check():
     try:
         with connected_clients_lock:
             clients_count = len(connected_clients)
-        
         with active_spam_lock:
             targets_count = len(active_spam_targets)
-        
         try:
             import psutil
             process = psutil.Process()
             memory_mb = process.memory_info().rss / 1024 / 1024
         except:
             memory_mb = 0
-        
-        return jsonify({
-            'status': 'healthy',
-            'clients': clients_count,
-            'targets': targets_count,
-            'memory_mb': round(memory_mb, 2),
-            'timestamp': datetime.now().isoformat()
-        }), 200
+        return jsonify({'status': 'healthy', 'clients': clients_count, 'targets': targets_count, 'memory_mb': round(memory_mb, 2), 'timestamp': datetime.now().isoformat()}), 200
     except Exception as e:
-        return jsonify({
-            'status': 'unhealthy',
-            'error': str(e)
-        }), 500
+        return jsonify({'status': 'unhealthy', 'error': str(e)}), 500
 
 @app.route('/stream/console')
 def stream_console():
-    """Live console stream for web UI"""
     def generate():
         console_logs = []
         while True:
             yield f"data: {json.dumps(console_logs[-20:])}\n\n"
             time.sleep(1)
-    
     return Response(stream_with_context(generate()), mimetype='text/event-stream')
 
-# ==================== NEW ROUTES FOR FILES AND SQUAD LEADER MANAGEMENT ====================
+# ==================== FILE ROUTES ====================
 
 @app.route('/api/download/targets', methods=['GET'])
 @login_required
 def download_targets_file():
-    """Download target.txt file"""
     if os.path.exists('target.txt'):
         with open('target.txt', 'r', encoding='utf-8') as f:
             content = f.read()
@@ -2443,7 +2315,6 @@ def download_targets_file():
 @app.route('/api/download/squad_data', methods=['GET'])
 @login_required
 def download_squad_data_file():
-    """Download squad_data.json file"""
     if os.path.exists(SQUAD_DATA_FILE):
         with open(SQUAD_DATA_FILE, 'r', encoding='utf-8') as f:
             content = f.read()
@@ -2453,28 +2324,20 @@ def download_squad_data_file():
 @app.route('/api/upload/targets', methods=['POST'])
 @login_required
 def upload_targets_file():
-    """Upload target.txt file - replaces existing targets and starts spam for them"""
     if 'file' not in request.files:
         return jsonify({'success': False, 'message': 'No file uploaded'}), 400
-    
     file = request.files['file']
     if not file.filename.endswith('.txt'):
         return jsonify({'success': False, 'message': 'Only .txt files allowed'}), 400
-    
     try:
         content = file.read().decode('utf-8')
-        
-        # Save the file
         with open('target.txt', 'w', encoding='utf-8') as f:
             f.write(content)
-        
-        # Parse UIDs and start spam
         uids = []
         for line in content.splitlines():
             line = line.strip()
             if line and line.isdigit():
                 uids.append(line)
-        
         started = []
         failed = []
         for uid in uids:
@@ -2483,43 +2346,26 @@ def upload_targets_file():
                 started.append(uid)
             else:
                 failed.append({'uid': uid, 'reason': message})
-        
-        return jsonify({
-            'success': True,
-            'message': f'Uploaded target.txt with {len(uids)} UIDs. Started: {len(started)}, Failed: {len(failed)}',
-            'started': started,
-            'failed': failed,
-            'total': len(uids)
-        })
-        
+        return jsonify({'success': True, 'message': f'Uploaded target.txt with {len(uids)} UIDs. Started: {len(started)}, Failed: {len(failed)}', 'started': started, 'failed': failed, 'total': len(uids)})
     except Exception as e:
         return jsonify({'success': False, 'message': f'Error: {str(e)}'}), 500
 
 @app.route('/api/upload/squad_data', methods=['POST'])
 @login_required
 def upload_squad_data_file():
-    """Upload squad_data.json file"""
     if 'file' not in request.files:
         return jsonify({'success': False, 'message': 'No file uploaded'}), 400
-    
     file = request.files['file']
     if not file.filename.endswith('.json'):
         return jsonify({'success': False, 'message': 'Only .json files allowed'}), 400
-    
     try:
         content = file.read().decode('utf-8')
-        # Validate JSON
         data = json.loads(content)
-        
-        # Save the file
         with open(SQUAD_DATA_FILE, 'w', encoding='utf-8') as f:
             json.dump(data, f, indent=4)
-        
-        # Process and start squad targets
         current_time = datetime.now()
         restored = 0
         expired = 0
-        
         for uid, info in data.items():
             try:
                 start_time = datetime.fromisoformat(info['start_time'])
@@ -2530,15 +2376,7 @@ def upload_squad_data_file():
                     expired += 1
             except:
                 pass
-        
-        return jsonify({
-            'success': True,
-            'message': f'Uploaded squad_data.json with {len(data)} entries. Restored: {restored}, Expired: {expired}',
-            'total': len(data),
-            'restored': restored,
-            'expired': expired
-        })
-        
+        return jsonify({'success': True, 'message': f'Uploaded squad_data.json with {len(data)} entries. Restored: {restored}, Expired: {expired}', 'total': len(data), 'restored': restored, 'expired': expired})
     except json.JSONDecodeError:
         return jsonify({'success': False, 'message': 'Invalid JSON format'}), 400
     except Exception as e:
@@ -2547,65 +2385,36 @@ def upload_squad_data_file():
 @app.route('/api/squad-leaders', methods=['GET'])
 @login_required
 def get_squad_leaders():
-    """Get all squad leaders with their details and expiration time"""
     try:
         data = load_squad_json()
         current_time = datetime.now()
         leaders = []
-        
         for uid, info in data.items():
             start_time = datetime.fromisoformat(info['start_time'])
             elapsed = (current_time - start_time).total_seconds()
             remaining = max(0, SQUAD_JOIN_DURATION - elapsed)
             is_expired = remaining <= 0
-            
-            # Get target info if available
             target_info = {}
             if uid in active_spam_targets:
                 target_info = active_spam_targets[uid]
-            
-            leaders.append({
-                'uid': uid,
-                'original_target': info.get('original_target', ''),
-                'start_time': start_time.isoformat(),
-                'elapsed_minutes': int(elapsed / 60),
-                'remaining_minutes': int(remaining / 60),
-                'is_expired': is_expired,
-                'status': target_info.get('status', 'UNKNOWN'),
-                'is_online': target_info.get('is_online', False),
-                'spam_active': uid in active_spam_targets
-            })
-        
-        # Sort by remaining time (active first)
+            leaders.append({'uid': uid, 'original_target': info.get('original_target', ''), 'start_time': start_time.isoformat(), 'elapsed_minutes': int(elapsed / 60), 'remaining_minutes': int(remaining / 60), 'is_expired': is_expired, 'status': target_info.get('status', 'UNKNOWN'), 'is_online': target_info.get('is_online', False), 'spam_active': uid in active_spam_targets})
         leaders.sort(key=lambda x: (x['is_expired'], -x['remaining_minutes']))
-        
-        return jsonify({
-            'success': True,
-            'total': len(leaders),
-            'leaders': leaders,
-            'expired_count': len([l for l in leaders if l['is_expired']]),
-            'active_count': len([l for l in leaders if not l['is_expired']])
-        })
-        
+        return jsonify({'success': True, 'total': len(leaders), 'leaders': leaders, 'expired_count': len([l for l in leaders if l['is_expired']]), 'active_count': len([l for l in leaders if not l['is_expired']])})
     except Exception as e:
         return jsonify({'success': False, 'message': f'Error: {str(e)}'}), 500
 
 @app.route('/api/squad-leaders/cleanup', methods=['POST'])
 @login_required
 def cleanup_squad_leaders():
-    """Remove expired squad leaders (more than 30 minutes old) from squad_data.json and target list"""
     try:
         data = load_squad_json()
         current_time = datetime.now()
         removed = []
         kept = {}
-        
         for uid, info in data.items():
             start_time = datetime.fromisoformat(info['start_time'])
             elapsed = (current_time - start_time).total_seconds()
-            
             if elapsed >= SQUAD_JOIN_DURATION:
-                # Expired - remove from active spam if present
                 with active_spam_lock:
                     if uid in active_spam_targets:
                         del active_spam_targets[uid]
@@ -2614,77 +2423,44 @@ def cleanup_squad_leaders():
                 removed.append(uid)
             else:
                 kept[uid] = info
-        
-        # Save updated data
         save_squad_json(kept)
-        
-        return jsonify({
-            'success': True,
-            'message': f'Cleaned up {len(removed)} expired squad leaders',
-            'removed': removed,
-            'kept_count': len(kept),
-            'removed_count': len(removed)
-        })
-        
+        return jsonify({'success': True, 'message': f'Cleaned up {len(removed)} expired squad leaders', 'removed': removed, 'kept_count': len(kept), 'removed_count': len(removed)})
     except Exception as e:
         return jsonify({'success': False, 'message': f'Error: {str(e)}'}), 500
 
 @app.route('/api/squad-leaders/remove/<uid>', methods=['POST'])
 @login_required
 def remove_squad_leader(uid):
-    """Remove a specific squad leader from squad_data.json and stop spam"""
     try:
         data = load_squad_json()
-        
         if uid not in data:
-            return jsonify({'success': False, 'message': f'UID {uid} not found in squad_data.json'}), 404
-        
-        # Stop spam if active
+            return jsonify({'success': False, 'message': f'UID {uid} not found'}), 404
         stop_spam(uid)
-        
-        # Remove from data
         del data[uid]
         save_squad_json(data)
-        
-        return jsonify({
-            'success': True,
-            'message': f'Removed squad leader {uid}',
-            'uid': uid
-        })
-        
+        return jsonify({'success': True, 'message': f'Removed squad leader {uid}', 'uid': uid})
     except Exception as e:
         return jsonify({'success': False, 'message': f'Error: {str(e)}'}), 500
 
 @app.route('/api/cleanup/expired-targets', methods=['POST'])
 @login_required
 def cleanup_expired_targets():
-    """Clean up all expired spam targets from target.txt and active targets list"""
     try:
         with active_spam_lock:
             targets_to_remove = []
             current_time = datetime.now()
-            
             for uid, info in active_spam_targets.items():
                 start_time = info.get('start_time')
                 if start_time:
                     elapsed = (current_time - start_time).total_seconds()
-                    # If target is older than 30 minutes and marked as squad leader
                     if elapsed >= SQUAD_JOIN_DURATION and info.get('is_squad_leader', False):
                         targets_to_remove.append(uid)
-        
         removed = []
         for uid in targets_to_remove:
             success, _ = stop_spam(uid)
             if success:
                 removed.append(uid)
-        
-        return jsonify({
-            'success': True,
-            'message': f'Cleaned up {len(removed)} expired squad leader targets',
-            'removed': removed,
-            'removed_count': len(removed)
-        })
-        
+        return jsonify({'success': True, 'message': f'Cleaned up {len(removed)} expired squad leader targets', 'removed': removed, 'removed_count': len(removed)})
     except Exception as e:
         return jsonify({'success': False, 'message': f'Error: {str(e)}'}), 500
 
@@ -2724,7 +2500,7 @@ LOGIN_TEMPLATE = '''<!DOCTYPE html>
             <button type="submit" class="btn-login"><i class="fas fa-unlock-alt"></i> UNLOCK</button>
             {% if error %}<div class="error"><i class="fas fa-exclamation-circle"></i> {{ error }}</div>{% endif %}
         </form>
-        <div class="footer-text">MAHIR ENGINE v3.0</div>
+        <div class="footer-text">MAHIR ENGINE v3.2</div>
     </div>
     <script>
         const canvas = document.getElementById('matrix-canvas'); const ctx = canvas.getContext('2d');
@@ -3148,7 +2924,7 @@ TARGETS_TEMPLATE = '''<!DOCTYPE html>
 </body>
 </html>'''
 
-# ==================== HTML_TEMPLATE WITH FILES AND SQUAD LEADER MANAGEMENT ====================
+# ==================== HTML_TEMPLATE WITH LAG SPAM AND GROUP LEADER ====================
 
 HTML_TEMPLATE = '''<!DOCTYPE html>
 <html lang="en">
@@ -3192,6 +2968,12 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
         .btn-success:hover { transform: translateY(-2px); box-shadow: 0 5px 20px rgba(0,176,155,0.3); }
         .btn-refresh { background: linear-gradient(135deg, #00d4ff, #7f00ff); color: #fff; animation: glow 2s infinite; }
         .btn-refresh:hover { transform: translateY(-2px) scale(1.02); box-shadow: 0 5px 30px rgba(0,212,255,0.4); }
+        .btn-lag { background: linear-gradient(135deg, #ff6600, #ff3300); color: #fff; }
+        .btn-lag:hover { transform: translateY(-2px); box-shadow: 0 5px 20px rgba(255,51,0,0.3); }
+        .btn-lag-stop { background: linear-gradient(135deg, #ff0044, #cc0033); color: #fff; }
+        .btn-lag-stop:hover { transform: translateY(-2px); box-shadow: 0 5px 20px rgba(255,0,68,0.3); }
+        .btn-gold { background: linear-gradient(135deg, #ffd700, #ffaa00); color: #000; }
+        .btn-gold:hover { transform: translateY(-2px); box-shadow: 0 5px 20px rgba(255,215,0,0.3); }
         @keyframes glow {
             0%, 100% { box-shadow: 0 0 20px rgba(0,212,255,0.2); }
             50% { box-shadow: 0 0 40px rgba(0,212,255,0.4); }
@@ -3238,7 +3020,6 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
         .refresh-status-text { font-size: 0.7rem; color: rgba(255,255,255,0.4); margin-top: 8px; padding: 8px 12px; background: rgba(0,0,0,0.3); border-radius: 6px; border-left: 3px solid #00d4ff; }
         .refresh-status-text .highlight { color: #00ffcc; }
         .refresh-status-text .error { color: #ff4444; }
-        /* Squad Leader Styles */
         .squad-leader-item { background: rgba(255,215,0,0.05); border-left: 3px solid #ffd700; padding: 8px 12px; margin: 4px 0; border-radius: 6px; display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; font-size: 0.8rem; gap: 6px; }
         .squad-leader-item .uid { color: #ffd700; font-family: monospace; font-weight: bold; }
         .squad-leader-item .expired { color: #ff4444; }
@@ -3249,12 +3030,14 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
         .file-btn i { font-size: 1.2rem; color: #ff007f; }
         .file-btn .name { font-size: 0.7rem; color: rgba(255,255,255,0.4); margin-top: 2px; }
         .file-btn .sub { font-size: 0.6rem; color: rgba(255,255,255,0.2); }
-        .btn-gold { background: linear-gradient(135deg, #ffd700, #ffaa00); color: #000; }
-        .btn-gold:hover { transform: translateY(-2px); box-shadow: 0 5px 20px rgba(255,215,0,0.3); }
-        @media (max-width: 768px) { .controls-grid { grid-template-columns: 1fr; } .input-group { flex-direction: column; } .btn { width: 100%; justify-content: center; } .header { flex-direction: column; text-align: center; } .file-grid { grid-template-columns: 1fr; } }
         .squad-list { max-height: 200px; overflow-y: auto; margin-top: 8px; }
         .squad-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
         .squad-actions .btn { flex: 1; min-width: 100px; justify-content: center; }
+        .lag-status { display: inline-block; padding: 2px 10px; border-radius: 10px; font-size: 0.7rem; }
+        .lag-status.running { background: rgba(255,51,0,0.2); color: #ff3300; animation: pulse 1s infinite; }
+        .lag-status.stopped { background: rgba(255,255,255,0.05); color: rgba(255,255,255,0.3); }
+        .group-leader-item { background: rgba(0,212,255,0.05); border-left: 3px solid #00d4ff; padding: 4px 10px; margin: 2px 0; border-radius: 4px; font-family: monospace; font-size: 0.7rem; color: #4facfe; display: inline-block; margin-right: 4px; }
+        @media (max-width: 768px) { .controls-grid { grid-template-columns: 1fr; } .input-group { flex-direction: column; } .btn { width: 100%; justify-content: center; } .header { flex-direction: column; text-align: center; } .file-grid { grid-template-columns: 1fr; } }
     </style>
 </head>
 <body>
@@ -3264,11 +3047,13 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
             <div>
                 <div class="logo"><i class="fas fa-bolt"></i> MAHIR SYSTEM</div>
                 <div style="color: rgba(255,255,255,0.3); font-size:0.8rem;">
-                    SPAM CONTROL ENGINE v3.2
+                    SPAM CONTROL ENGINE v3.3
                     <span class="feature-badge"><i class="fas fa-sync"></i> Auto Status Check (5s)</span>
                     <span class="feature-badge"><i class="fas fa-users"></i> Squad Auto-Join</span>
                     <span class="feature-badge"><i class="fas fa-layer-group"></i> ROOM+GROUP</span>
                     <span class="feature-badge"><i class="fas fa-file"></i> File Manager</span>
+                    <span class="feature-badge"><i class="fas fa-bolt"></i> Lag Spam</span>
+                    <span class="feature-badge"><i class="fas fa-crown"></i> Group Leaders</span>
                 </div>
             </div>
             <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
@@ -3284,6 +3069,25 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
             <div class="stat-card"><i class="fas fa-robot"></i><h3>BOT ACCOUNTS</h3><div class="value" id="botCount">0</div></div>
             <div class="stat-card"><i class="fas fa-users"></i><h3>SQUAD LEADERS</h3><div class="value" id="squadCount">0</div></div>
             <div class="stat-card"><i class="fas fa-file-alt"></i><h3>ACCOUNTS IN FILE</h3><div class="value" id="fileAccCount">0</div></div>
+            <div class="stat-card"><i class="fas fa-crown" style="color:#ffd700;"></i><h3>GROUP LEADERS</h3><div class="value" id="groupLeaderCount">0</div></div>
+        </div>
+
+        <!-- ==================== LAG SPAM CARD ==================== -->
+        <div class="control-card" style="margin-bottom:20px; border: 1px solid rgba(255,51,0,0.2);">
+            <h3><i class="fas fa-bolt" style="color:#ff3300;"></i> LAG SPAM</h3>
+            <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center;">
+                <div style="display:flex; gap:10px; flex-wrap:wrap; flex:1;">
+                    <input type="text" id="lagTargetUid" placeholder="Target UID (optional)" style="padding:10px 14px; border:1px solid rgba(255,255,255,0.08); border-radius:8px; background:rgba(0,0,0,0.4); color:#fff; font-family:monospace; outline:none; min-width:150px; flex:1;">
+                    <button class="btn btn-lag" onclick="startLagSpam()"><i class="fas fa-play"></i> START LAG</button>
+                    <button class="btn btn-lag-stop" onclick="stopLagSpam()"><i class="fas fa-stop"></i> STOP LAG</button>
+                </div>
+                <div>
+                    <span class="lag-status stopped" id="lagStatus">⏹ Stopped</span>
+                </div>
+            </div>
+            <div style="font-size:0.6rem; color:rgba(255,255,255,0.2); margin-top:5px;">
+                <i class="fas fa-info-circle"></i> Lag spam sends rapid packets to cause lag. Target UID optional - uses current session.
+            </div>
         </div>
 
         <div class="controls-grid">
@@ -3354,6 +3158,18 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
             </div>
         </div>
 
+        <!-- ==================== GROUP LEADERS CARD ==================== -->
+        <div class="control-card" style="margin-bottom:20px; border: 1px solid rgba(0,212,255,0.1);">
+            <h3><i class="fas fa-crown" style="color:#00d4ff;"></i> GROUP LEADER ACCOUNTS</h3>
+            <div style="display:flex; gap:10px; flex-wrap:wrap; margin-bottom:8px;">
+                <button class="btn btn-outline btn-sm" onclick="refreshGroupLeaders()"><i class="fas fa-sync-alt"></i> Refresh</button>
+                <span style="font-size:0.7rem; color:rgba(255,255,255,0.3);">These accounts are automatically detected as group leaders</span>
+            </div>
+            <div id="groupLeaderList" style="padding:8px; background:rgba(0,0,0,0.3); border-radius:6px; min-height:30px;">
+                <span style="color:rgba(255,255,255,0.3); font-size:0.8rem;">Loading...</span>
+            </div>
+        </div>
+
         <div class="controls-grid">
             <div class="control-card">
                 <h3><i class="fas fa-fire" style="color:#ff007f;"></i> START SPAM</h3>
@@ -3371,18 +3187,6 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
                 </div>
                 <div style="display:flex; gap:8px; margin-top:10px; flex-wrap:wrap;">
                     <button class="btn btn-warning" onclick="stopAllSpam()" style="flex:1;"><i class="fas fa-stop-circle"></i> STOP ALL</button>
-                </div>
-            </div>
-        </div>
-
-        <div class="controls-grid">
-            <div class="control-card">
-                <h3><i class="fas fa-file" style="color:#4facfe;"></i> FILES</h3>
-                <div style="background:rgba(0,0,0,0.3); padding:10px; border-radius:8px; font-size:0.8rem;">
-                    <div>📁 accs.txt (ACCOUNTS) - <span id="accCount" style="color:rgba(255,255,255,0.4);">0 accounts</span></div>
-                    <div style="display:flex; gap:8px; margin-top:8px; flex-wrap:wrap;">
-                        <button class="btn btn-outline btn-sm" onclick="downloadAccs()"><i class="fas fa-download"></i> accs.txt</button>
-                    </div>
                 </div>
             </div>
         </div>
@@ -3406,7 +3210,6 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
                 <span style="float:right; font-size:0.6rem; color:rgba(255,255,255,0.2);">Last refresh: <span id="lastRefreshTime">Never</span></span>
             </div>
         </div>
-        <!-- ==================== END: STATUS REFRESH CARD ==================== -->
 
         <div class="control-card" style="margin-bottom:20px;">
             <h3><i class="fas fa-list"></i> ACTIVE TARGETS <span style="font-size:0.6rem; color:rgba(255,255,255,0.3);">(Status auto-check every 5s)</span></h3>
@@ -3424,6 +3227,7 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
                 <div class="line"><span style="color:rgba(255,255,255,0.3);">[System]</span> <span class="console-info">Accounts: accs.txt</span></div>
                 <div class="line"><span style="color:rgba(255,255,255,0.3);">[System]</span> <span class="console-info">File Manager: Download/Upload targets.txt & squad_data.json</span></div>
                 <div class="line"><span style="color:rgba(255,255,255,0.3);">[System]</span> <span class="console-info">Squad leaders expire after 30 minutes</span></div>
+                <div class="line"><span style="color:rgba(255,255,255,0.3);">[System]</span> <span class="console-info">Group Leader accounts auto-detected</span></div>
             </div>
         </div>
 
@@ -3434,7 +3238,7 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
             </div>
         </div>
 
-        <div class="footer">MAHIR SYSTEM v3.2 | <i class="fas fa-code"></i> Engine by MAHIR | Status Check: 5s | Squad Auto-Join: 30min | ROOM+GROUP | File Manager</div>
+        <div class="footer">MAHIR SYSTEM v3.3 | <i class="fas fa-code"></i> Engine by MAHIR | Status Check: 5s | Squad Auto-Join: 30min | ROOM+GROUP | File Manager | Lag Spam | Group Leaders</div>
     </div>
 
     <script>
@@ -3462,6 +3266,97 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
             t.innerHTML = `<i class="fas ${icons[type] || icons.info}"></i> ${msg}`;
             document.body.appendChild(t);
             setTimeout(() => t.remove(), 4000);
+        }
+
+        // ==================== LAG SPAM FUNCTIONS ====================
+        function startLagSpam() {
+            const uid = document.getElementById('lagTargetUid').value.trim();
+            const data = uid ? { uid: uid } : {};
+            
+            fetch('/api/lag/start', { 
+                method: 'POST', 
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data)
+            })
+            .then(r => r.json())
+            .then(d => {
+                if (d.success) {
+                    showToast(d.message, 'success');
+                    updateLagStatus(true);
+                    const consoleBox = document.getElementById('consoleBox');
+                    const line = document.createElement('div');
+                    line.className = 'line';
+                    line.innerHTML = `<span style="color:rgba(255,255,255,0.3);">[Lag]</span> <span class="console-success">🚀 ${d.message}</span>`;
+                    consoleBox.appendChild(line);
+                    consoleBox.scrollTop = consoleBox.scrollHeight;
+                } else {
+                    showToast(d.message, 'error');
+                }
+            })
+            .catch(() => showToast('Error starting lag spam', 'error'));
+        }
+
+        function stopLagSpam() {
+            fetch('/api/lag/stop', { method: 'POST' })
+            .then(r => r.json())
+            .then(d => {
+                if (d.success) {
+                    showToast(d.message, 'success');
+                    updateLagStatus(false);
+                    const consoleBox = document.getElementById('consoleBox');
+                    const line = document.createElement('div');
+                    line.className = 'line';
+                    line.innerHTML = `<span style="color:rgba(255,255,255,0.3);">[Lag]</span> <span class="console-warning">🛑 ${d.message}</span>`;
+                    consoleBox.appendChild(line);
+                    consoleBox.scrollTop = consoleBox.scrollHeight;
+                } else {
+                    showToast(d.message, 'error');
+                }
+            })
+            .catch(() => showToast('Error stopping lag spam', 'error'));
+        }
+
+        function updateLagStatus(running) {
+            const el = document.getElementById('lagStatus');
+            if (running) {
+                el.className = 'lag-status running';
+                el.innerHTML = '⚡ Running';
+            } else {
+                el.className = 'lag-status stopped';
+                el.innerHTML = '⏹ Stopped';
+            }
+        }
+
+        function checkLagStatus() {
+            fetch('/api/lag/status')
+            .then(r => r.json())
+            .then(d => {
+                if (d.success) {
+                    updateLagStatus(d.running);
+                }
+            })
+            .catch(() => {});
+        }
+
+        // ==================== GROUP LEADER FUNCTIONS ====================
+        function refreshGroupLeaders() {
+            fetch('/api/group-leaders')
+            .then(r => r.json())
+            .then(d => {
+                const list = document.getElementById('groupLeaderList');
+                if (d.success && d.leaders && d.leaders.length > 0) {
+                    list.innerHTML = d.leaders.map(uid => 
+                        `<span class="group-leader-item">👑 ${uid}</span>`
+                    ).join('');
+                    document.getElementById('groupLeaderCount').textContent = d.count;
+                } else {
+                    list.innerHTML = '<span style="color:rgba(255,255,255,0.3); font-size:0.8rem;">No group leader accounts detected</span>';
+                    document.getElementById('groupLeaderCount').textContent = '0';
+                }
+            })
+            .catch(() => {
+                document.getElementById('groupLeaderList').innerHTML = '<span style="color:#ff4444; font-size:0.8rem;">❌ Failed to load</span>';
+            });
         }
 
         // ==================== REFRESH FUNCTIONS ====================
@@ -3595,8 +3490,17 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
                     }
                 });
             }
+            // Enter key for lag target
+            const lagInput = document.getElementById('lagTargetUid');
+            if (lagInput) {
+                lagInput.addEventListener('keypress', function(e) {
+                    if (e.key === 'Enter') {
+                        e.preventDefault();
+                        startLagSpam();
+                    }
+                });
+            }
         });
-        // ==================== END REFRESH FUNCTIONS ====================
 
         // ==================== FILE MANAGEMENT FUNCTIONS ====================
         function downloadFile(type) {
@@ -3765,6 +3669,7 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
                     if (d.success) {
                         showToast(d.message, 'success');
                         refreshStatus();
+                        refreshGroupLeaders();
                     } else {
                         showToast(d.message || 'Reset failed', 'error');
                     }
@@ -3794,6 +3699,7 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
                         showToast(d.message, 'success');
                         refreshStatus();
                         getAccountCount();
+                        refreshGroupLeaders();
                     } else showToast(d.message, 'error');
                 }).catch(() => showToast('Upload failed', 'error'));
         }
@@ -3848,6 +3754,11 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
                         const squadCount = s.active_targets ? s.active_targets.filter(t => t.is_squad_leader).length : 0;
                         document.getElementById('squadCount').textContent = squadCount;
                         
+                        // Update lag status from status response
+                        if (s.lag_spam_running !== undefined) {
+                            updateLagStatus(s.lag_spam_running);
+                        }
+                        
                         const list = document.getElementById('activeList');
                         if (s.active_targets && s.active_targets.length > 0) {
                             list.innerHTML = s.active_targets.map(t => `
@@ -3879,12 +3790,15 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
                 }).catch(() => {});
             
             getAccountCount();
+            refreshGroupLeaders();
         }
 
         // Initial refresh
         setInterval(refreshStatus, 5000);
+        setInterval(checkLagStatus, 3000);
         refreshStatus();
         refreshSquadLeaders();
+        checkLagStatus();
         document.getElementById('spamUid').addEventListener('keypress', e => { if (e.key === 'Enter') startSpam(); });
         document.getElementById('stopUid').addEventListener('keypress', e => { if (e.key === 'Enter') stopSingleSpam(); });
     </script>
@@ -3896,7 +3810,7 @@ def main():
     print(f"""
     {C}{BOLD}
     ╔══════════════════════════════════════════════════════════════════════╗
-    ║              🎯 MAHIR SPAM SYSTEM v3.2 🎯                           ║
+    ║              🎯 MAHIR SPAM SYSTEM v3.3 🎯                           ║
     ║                                                                      ║
     ║     📁 accs.txt → Room Spam + Group/Squad Spam + Badge Spam         ║
     ║                                                                      ║
@@ -3905,6 +3819,8 @@ def main():
     ║     ✅ Squad Auto-Join: 30 minutes                                  ║
     ║     ✅ File Manager: Download/Upload targets.txt & squad_data.json   ║
     ║     ✅ Squad Leader Management: View & Cleanup expired               ║
+    ║     ✅ Lag Spam: Rapid packet spam for lag                          ║
+    ║     ✅ Group Leader Auto-Detection                                  ║
     ║     ✅ Target Viewer: /targets (Pass: HUNTERMAHIR)                  ║
     ║                                                                      ║
     ║     🌐 Web Panel: http://127.0.0.1:8080                             ║
@@ -3920,16 +3836,15 @@ def main():
     status_thread.start()
     print(f"{G}✅ Status checker thread started (every {STATUS_CHECK_INTERVAL}s){RS}")
 
-    # ২. প্রথমবার একাউন্ট রান করা
+    # প্রথমবার একাউন্ট রান করা
     Thread(target=run_accounts, daemon=True).start()
 
-    # ৩. কিছুক্ষণ অপেক্ষা করে বাকি টার্গেটগুলো লোড করা
+    # কিছুক্ষণ অপেক্ষা করে বাকি টার্গেটগুলো লোড করা
     time.sleep(1)
     clean_and_load_squad_targets()
     load_saved_targets()
 
     port = int(os.environ.get("PORT", 8080))
-    # ৪. ফ্লাস্ক অ্যাপ রান করা
     app.run(host='0.0.0.0', port=port, debug=False, threaded=True)
 
 if __name__ == "__main__":
