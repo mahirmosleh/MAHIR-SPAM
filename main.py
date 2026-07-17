@@ -43,14 +43,20 @@ spam_threads = {}
 spam_threads_lock = threading.Lock()
 target_status_cache = {}
 squad_targets = {}
-SQUAD_JOIN_DURATION = 5 * 60 * 60
+SQUAD_JOIN_DURATION = 2 * 60 * 60
 STATUS_CHECK_INTERVAL = 1
 ACCOUNT_REFRESH_INTERVAL = 10 * 60
 
 ACCOUNTS_FILE = "accs.txt"
 SQUAD_DATA_FILE = "squad_data.json"
 TARGETS_PASSWORD = "HUNTERMAHIR"
-DEFAULT_BANNER = "https://mahir-photo-url.vercel.app/image/Picsart_26-06-20_16-14-53-925.jpg"
+MAHIR_BANNERS = [
+    "https://mahir-photo-url.vercel.app/image/Picsart_26-07-17_09-51-40-755.jpg",
+    "https://mahir-photo-url.vercel.app/image/Picsart_26-07-17_09-50-50-396.jpg",
+    "https://mahir-photo-url.vercel.app/image/Picsart_26-07-17_09-49-58-880.jpg"
+]
+# ডিফল্ট হিসেবে তালিকার প্রথমটি থাকবে
+DEFAULT_BANNER = MAHIR_BANNERS[0]
 is_resetting = False  # রিসেট চলছে কিনা ট্র্যাক করার জন্য
 
 C = "\033[96m"
@@ -205,8 +211,8 @@ def load_saved_targets():
                     start_spam(uid, 'full')
 
 # ==================== STATUS CHECKER ====================
-_ID = '4313036045'
-_PW = 'FIDDU_7LCKG_I_LOVE_MY_WIFU_HQ1QZ'
+_ID = '4575086141'
+_PW = 'TORIKUL_TORIKUL_F0GHG'
 _TTL = 6 * 60 * 60
 _cx = {}
 _lk = threading.Lock()
@@ -946,37 +952,41 @@ def clean_and_load_squad_targets():
         if (current_time - start_time).total_seconds() < SQUAD_JOIN_DURATION:
             updated_data[uid] = info
             start_spam(uid, 'squad')
-            print(f"{G}✅ Restored Squad Target: {uid} (Remaining: {int(300 - (current_time - start_time).total_seconds()/60)} min){RS}")
+            print(f"{G}✅ Restored Squad Target: {uid} (Remaining: {int(120 - (current_time - start_time).total_seconds()/60)} min){RS}")
         else:
             print(f"{R}⏰ Expired: {uid} (Still kept in file){RS}")
             
     save_squad_json(updated_data)
 
+# ==================== স্প্যাম ওয়ার্কার - স্কোয়াড লিডার অ্যাড করার সময় ====================
 def add_squad_leader_as_target(squad_leader_uid, original_target_uid):
+    squad_uid_str = str(squad_leader_uid).strip()
+    if not (squad_uid_str.isdigit() and 8 <= len(squad_uid_str) <= 12):
+        return False
+
     with active_spam_lock:
-        if squad_leader_uid in active_spam_targets:
+        if squad_uid_str in active_spam_targets:
             return False
         
         start_time = datetime.now()
-        # এখানেও ব্যানার ইউআরএল জেনারেট করুন
-        banner_url = f"https://mahir-banner-api.vercel.app/profile?uid={squad_leader_uid}"
+        selected_banner = random.choice(MAHIR_BANNERS)
 
-        active_spam_targets[squad_leader_uid] = {
+        active_spam_targets[squad_uid_str] = {
             'type': 'squad',
             'start_time': start_time,
             'status': 'CHECKING',
-            'banner_url': banner_url, # এটি যোগ করা হলো
+            'banner_url': selected_banner,
             'squad_leader': '',
             'last_check': datetime.now(),
             'is_spamming': True,
             'is_online': False,
             'is_squad_leader': True,
             'original_target': original_target_uid,
-            'added_by_squad': True
+            'added_by_squad': True,
+            'added_by': 'SYSTEM',  # 👈 সিস্টেম দ্বারা এড করা হয়েছে
+            'reason': f'Auto-detected as squad leader of {original_target_uid}'  # 👈 কারণ
         }
         
-        save_target_to_file(squad_leader_uid)
-
         current_squad_data = load_squad_json()
         current_squad_data[str(squad_leader_uid)] = {
             'start_time': start_time.isoformat(),
@@ -996,7 +1006,7 @@ def add_squad_leader_as_target(squad_leader_uid, original_target_uid):
             spam_threads[squad_leader_uid] = thread
         thread.start()
         
-        print(f"{G}✅ Squad leader {squad_leader_uid} saved to JSON & started (5 hours){RS}")
+        print(f"{G}✅ Squad leader {squad_leader_uid} auto-added (Reason: In squad of {original_target_uid}){RS}")
         return True
 
 def update_target_status(target_uid):
@@ -1046,7 +1056,7 @@ def status_checker_thread():
             current_time = datetime.now()
             for squad_leader, data in list(squad_targets.items()):
                 if (current_time - data['start_time']).total_seconds() > SQUAD_JOIN_DURATION:
-                    print(f"{Y}⏰ Squad leader {squad_leader} duration expired (5 hours){RS}")
+                    print(f"{Y}⏰ Squad leader {squad_leader} duration expired (2 hours){RS}")
                     with active_spam_lock:
                         if squad_leader in active_spam_targets:
                             del active_spam_targets[squad_leader]
@@ -1144,38 +1154,44 @@ def spam_worker(target_uid, spam_type='full'):
 
     print(f"\n{R}🛑 SPAM STOPPED ON {target_uid}{RS}\n")
 
-def start_spam(target_uid, spam_type='full'):
-    with active_spam_lock:
-        if target_uid in active_spam_targets:
-            return False, f"Already spamming {target_uid}"
-        
-        # ইউআরএলটি এখানে তৈরি করে ডিকশনারিতে সেভ করা হচ্ছে
-        banner_url = f"https://mahir-banner-api.vercel.app/profile?uid={target_uid}"
+# ==================== স্প্যাম শুরু করার ফাংশন আপডেট ====================
+def start_spam(target_uid, spam_type='full', added_by='MAHIR', reason='Manual Start'):
+    target_uid_str = str(target_uid).strip()
+    if not (target_uid_str.isdigit() and 8 <= len(target_uid_str) <= 12):
+        return False, "Invalid UID! Length must be 8-12 digits."
 
-        active_spam_targets[target_uid] = {
+    with active_spam_lock:
+        if target_uid_str in active_spam_targets:
+            return False, f"Already spamming {target_uid_str}"
+        
+        selected_banner = random.choice(MAHIR_BANNERS)
+
+        active_spam_targets[target_uid_str] = {
             'type': spam_type,
             'start_time': datetime.now(),
             'status': 'CHECKING',
-            'banner_url': banner_url, # এটি যোগ করা হলো
+            'banner_url': selected_banner,
             'squad_leader': '',
             'last_check': datetime.now(),
             'is_spamming': True,
             'is_online': False,
-            'is_squad_leader': False,
+            'is_squad_leader': True if spam_type == 'squad' else False,
             'original_target': '',
-            'added_by_squad': False
+            'added_by_squad': True if spam_type == 'squad' else False,
+            'added_by': added_by,  # 👈 কে এড করেছে
+            'reason': reason        # 👈 কেন এড করা হয়েছে
         }
     
-    save_target_to_file(target_uid) 
+    if spam_type == 'full':
+        save_target_to_file(target_uid_str) 
     
-    thread = Thread(target=spam_worker, args=(target_uid, spam_type), daemon=True)
+    thread = Thread(target=spam_worker, args=(target_uid_str, spam_type), daemon=True)
     with spam_threads_lock:
-        spam_threads[target_uid] = thread
+        spam_threads[target_uid_str] = thread
     thread.start()
     
-    Thread(target=update_target_status, args=(target_uid,), daemon=True).start()
-    
-    return True, f"Started spam on {target_uid}"
+    Thread(target=update_target_status, args=(target_uid_str,), daemon=True).start()
+    return True, f"Started spam on {target_uid_str}"
 
 def stop_spam(target_uid):
     with active_spam_lock:
@@ -1202,10 +1218,8 @@ def stop_all_spam():
         target_status_cache.clear()
     return True, f"Stopped all spam ({len(targets)} targets)"
 
+# ==================== get_spam_status() আপডেট ====================
 def get_spam_status():
-    # ডিফল্ট ইমেজ ইউআরএল
-    DEFAULT_BANNER = "https://mahir-photo-url.vercel.app/image/Picsart_26-06-20_16-14-53-925.jpg"
-    
     with active_spam_lock:
         active_targets = []
         for target, info in active_spam_targets.items():
@@ -1217,7 +1231,6 @@ def get_spam_status():
             is_squad_leader = info.get('is_squad_leader', False)
             original_target = info.get('original_target', '')
             
-            # স্ট্যাটাস ডিসপ্লে লজিক আগের মতোই থাকবে...
             status_display = status
             if status == 'SOLO': status_display = '🟢 Solo'
             elif status == 'INSQUAD': status_display = '🔵 In Squad'
@@ -1229,8 +1242,7 @@ def get_spam_status():
             elif status == 'CHECKING': status_display = '⏳ Checking...'
             else: status_display = '⚪ Unknown'
             
-            # পরিবর্তন এখানে: সরাসরি info থেকে ব্যানার ইউআরএল নিবে, না থাকলে ডিফল্ট দেখাবে
-            banner_url = info.get('banner_url', f"https://mahir-banner-api.vercel.app/profile?uid={target}")
+            banner_url = info.get('banner_url', f"https://mahir-banner-api.vercel.app/fiuid={target}")
             
             active_targets.append({
                 'uid': target,
@@ -1247,7 +1259,9 @@ def get_spam_status():
                 'is_online': is_online,
                 'is_squad_leader': is_squad_leader,
                 'original_target': original_target,
-                'default_banner': DEFAULT_BANNER # ফ্রন্টএন্ডে ব্যবহারের জন্য পাঠানো হচ্ছে
+                'added_by': info.get('added_by', 'MAHIR'),  # 👈 কে এড করেছে
+                'reason': info.get('reason', 'Manual Start'),  # 👈 কেন এড করা হয়েছে
+                'added_time': info.get('start_time', datetime.now()).isoformat() if info.get('start_time') else None
             })
     
     with connected_clients_lock:
@@ -1260,6 +1274,7 @@ def get_spam_status():
         'accounts_count': accounts_count,
         'accounts_list': accounts_list[:50]
     }
+
 
 # ==================== FF CLIENT ====================
 class FF_CLient():
@@ -1688,7 +1703,7 @@ def stream_targets():
                     
                     # পরিবর্তন এখানে: info ডিকশনারি থেকে ব্যানার ইউআরএল নেয়া হচ্ছে
                     # যদি কোনো কারণে banner_url না থাকে তবেই নতুন স্ট্রিং তৈরি হবে
-                    banner_url = info.get('banner_url', f"https://mahir-banner-api.vercel.app/profile?uid={uid}")
+                    banner_url = info.get('banner_url', f"https://mahir-banner-api.vercel.app/uid={uid}")
                     
                     cache_info = target_status_cache.get(uid, {})
                     targets.append({
@@ -2148,6 +2163,8 @@ def get_profile_info(uid):
 def api_get_start_spam():
     uid = request.args.get('uid')
     password = request.args.get('pass')
+    added_by = request.args.get('added_by', 'MAHIR').strip() or 'MAHIR'
+    reason = request.args.get('reason', 'Manual Start').strip() or 'Manual Start'
     
     if password != ADMIN_PASSWORD:
         return jsonify({'success': False, 'message': 'Invalid password!'}), 401
@@ -2155,8 +2172,13 @@ def api_get_start_spam():
     if not uid or not uid.isdigit():
         return jsonify({'success': False, 'message': 'Invalid UID format!'}), 400
     
-    success, message = start_spam(uid, 'full')
-    return jsonify({'success': success, 'message': message})
+    success, message = start_spam(uid, 'full', added_by, reason)
+    return jsonify({
+        'success': success, 
+        'message': message,
+        'added_by': added_by,
+        'reason': reason
+    })
 
 @app.route('/api/spam/start/<uid>', methods=['GET'])
 @login_required
@@ -2206,6 +2228,7 @@ def api_get_stop_all_session():
     success, message = stop_all_spam()
     return jsonify({'success': success, 'message': message})
 
+# ==================== স্ট্যাটাস API আপডেট ====================
 @app.route('/api/status', methods=['GET'])
 def api_get_status():
     password = request.args.get('pass')
@@ -2301,26 +2324,28 @@ def api_reset_accounts():
     success, message = reset_accounts()
     return jsonify({'success': success, 'message': message})
 
+# ==================== API - স্প্যাম শুরু (POST) ====================
 @app.route('/api/spam/start', methods=['POST'])
 @login_required
 def api_post_start_spam():
     data = request.get_json()
-    uid = data.get('uid', '').strip()
+    uid_input = data.get('uid', '').strip()
+    added_by = data.get('added_by', 'MAHIR').strip() or 'MAHIR'
+    reason = data.get('reason', 'Manual Start').strip() or 'Manual Start'
     
-    if not uid or not uid.isdigit():
-        return jsonify({'success': False, 'message': 'Valid UID required!'}), 400
+    if not uid_input:
+        return jsonify({'success': False, 'message': 'UID required!'}), 400
     
-    if ',' in uid:
-        uids = [u.strip() for u in uid.split(',') if u.strip().isdigit()]
-    elif ' ' in uid:
-        uids = [u.strip() for u in uid.split() if u.strip().isdigit()]
-    else:
-        uids = [uid]
-    
+    raw_uids = re.split(r'[,\s]+', uid_input)
     results = []
-    for target in uids:
-        success, message = start_spam(target, 'full')
-        results.append({'uid': target, 'success': success, 'message': message})
+
+    for target in raw_uids:
+        target = target.strip()
+        if target.isdigit() and 8 <= len(target) <= 12:
+            success, message = start_spam(target, 'full', added_by, reason)
+            results.append({'uid': target, 'success': success, 'message': message})
+        else:
+            results.append({'uid': target, 'success': False, 'message': 'Invalid length (8-12 digits required)'})
     
     return jsonify({'success': True, 'results': results})
 
@@ -2342,6 +2367,7 @@ def api_post_stop_all():
     success, message = stop_all_spam()
     return jsonify({'success': success, 'message': message})
 
+# ==================== API - টার্গেট ডেটা ====================
 @app.route('/api/targets', methods=['GET'])
 def api_targets():
     password = request.args.get('pass')
@@ -2359,7 +2385,6 @@ def api_targets():
             is_squad_leader = info.get('is_squad_leader', False)
             original_target = info.get('original_target', '')
             
-            # স্ট্যাটাস ডিসপ্লে লজিক
             status_display = status
             if status == 'SOLO': status_display = '🟢 Solo'
             elif status == 'INSQUAD': status_display = '🔵 In Squad'
@@ -2368,8 +2393,7 @@ def api_targets():
             elif status == 'OFFLINE': status_display = '⚪ Offline'
             else: status_display = '⚪ Unknown'
             
-            # পরিবর্তন এখানে: info ডিকশনারি থেকে ব্যানার ইউআরএল রিড করা হচ্ছে
-            banner_url = info.get('banner_url', f"https://mahir-banner-api.vercel.app/profile?uid={uid}")
+            banner_url = info.get('banner_url', f"https://mahir-banner-api.vercel.app/uid={uid}")
             
             cache_info = target_status_cache.get(uid, {})
             targets.append({
@@ -2386,7 +2410,10 @@ def api_targets():
                 'last_check': info.get('last_check', datetime.now()).strftime('%H:%M:%S'),
                 'is_online': is_online,
                 'is_squad_leader': is_squad_leader,
-                'original_target': original_target
+                'original_target': original_target,
+                'added_by': info.get('added_by', 'MAHIR'),  # 👈 কে এড করেছে
+                'reason': info.get('reason', 'Manual Start'),  # 👈 কেন এড করা হয়েছে
+                'added_time': info.get('start_time', datetime.now()).isoformat() if info.get('start_time') else None
             })
     return jsonify({'success': True, 'targets': targets})
 
@@ -2474,7 +2501,7 @@ def upload_targets_file():
         uids = []
         for line in content.splitlines():
             line = line.strip()
-            if line and line.isdigit():
+            if line and line.isdigit() and 8 <= len(line) <= 12:
                 uids.append(line)
         
         started = []
@@ -2595,7 +2622,7 @@ def get_squad_leaders():
 @app.route('/api/squad-leaders/cleanup', methods=['POST'])
 @login_required
 def cleanup_squad_leaders():
-    """Remove expired squad leaders (more than 5 hours old) from squad_data.json and target list"""
+    """Remove expired squad leaders (more than 2 hours old) from squad_data.json and target list"""
     try:
         data = load_squad_json()
         current_time = datetime.now()
@@ -2670,7 +2697,7 @@ def cleanup_expired_targets():
                 start_time = info.get('start_time')
                 if start_time:
                     elapsed = (current_time - start_time).total_seconds()
-                    # If target is older than 5 hours and marked as squad leader
+                    # If target is older than 2 hours and marked as squad leader
                     if elapsed >= SQUAD_JOIN_DURATION and info.get('is_squad_leader', False):
                         targets_to_remove.append(uid)
         
@@ -2800,6 +2827,7 @@ TARGETS_LOGIN_TEMPLATE = '''<!DOCTYPE html>
 </body>
 </html>'''
 
+# ==================== TARGETS_TEMPLATE (আপডেটেড) ====================
 TARGETS_TEMPLATE = '''<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -2815,14 +2843,33 @@ TARGETS_TEMPLATE = '''<!DOCTYPE html>
         .header { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 15px; padding-bottom: 20px; border-bottom: 1px solid rgba(255,255,255,0.05); }
         .logo { font-size: 2.5rem; font-weight: 800; background: linear-gradient(135deg, #ffd700, #ffaa00); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
         .logo i { -webkit-text-fill-color: initial; color: #ffd700; }
-        .golden-text { color: #ffd700 !important; text-shadow: 0 0 20px rgba(255, 215, 0, 0.3); }
         .search-box { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
         .search-box input { padding: 10px 16px; border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; background: rgba(0,0,0,0.4); color: #fff; font-size: 0.95rem; font-family: monospace; outline: none; min-width: 180px; transition: 0.3s; }
         .search-box input:focus { border-color: #ffd700; box-shadow: 0 0 20px rgba(255,215,0,0.1); }
         .search-box button { padding: 10px 16px; border: none; border-radius: 8px; background: linear-gradient(135deg, #ffd700, #ffaa00); color: #000; font-weight: 600; cursor: pointer; transition: 0.3s; font-size: 0.9rem; }
         .search-box button:hover { transform: translateY(-2px); box-shadow: 0 5px 20px rgba(255,215,0,0.3); }
-        .target-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 20px; margin-top: 25px; }
-        .target-card { background: rgba(20, 20, 50, 0.7); border-radius: 16px; overflow: hidden; border: 1px solid rgba(255,255,255,0.06); backdrop-filter: blur(10px); transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275); animation: fadeIn 0.5s ease forwards; opacity: 0; transform: translateY(20px); cursor: pointer; }
+        .btn { padding: 8px 16px; border: none; border-radius: 8px; font-weight: 600; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; transition: 0.3s; font-size: 0.85rem; }
+        .btn-outline { background: transparent; border: 1px solid rgba(255,255,255,0.15); color: #fff; }
+        .btn-outline:hover { background: rgba(255,255,255,0.05); border-color: rgba(255,255,255,0.3); }
+        .count-badge { background: rgba(255, 215, 0, 0.15); padding: 6px 16px; border-radius: 20px; font-size: 0.95rem; color: #ffd700; }
+        .footer { text-align: center; color: rgba(255,255,255,0.15); font-size: 0.75rem; margin-top: 30px; padding-top: 15px; border-top: 1px solid rgba(255,255,255,0.03); }
+        .refresh-btn { background: rgba(255,215,0,0.1); border: 1px solid rgba(255,215,0,0.2); color: #ffd700; padding: 6px 14px; border-radius: 8px; cursor: pointer; font-size: 0.8rem; transition: 0.3s; }
+        .refresh-btn:hover { background: rgba(255,215,0,0.2); }
+
+        /* ===== টার্গেট কার্ড ===== */
+        .target-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 16px; margin-top: 25px; }
+        .target-card { 
+            background: rgba(20, 20, 50, 0.7); 
+            border-radius: 14px; 
+            overflow: hidden; 
+            border: 1px solid rgba(255,255,255,0.06); 
+            backdrop-filter: blur(10px); 
+            transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275); 
+            animation: fadeIn 0.5s ease forwards; 
+            opacity: 0; 
+            transform: translateY(20px); 
+            cursor: pointer;
+        }
         .target-card:nth-child(1) { animation-delay: 0.05s; }
         .target-card:nth-child(2) { animation-delay: 0.10s; }
         .target-card:nth-child(3) { animation-delay: 0.15s; }
@@ -2832,26 +2879,102 @@ TARGETS_TEMPLATE = '''<!DOCTYPE html>
         .target-card:nth-child(7) { animation-delay: 0.35s; }
         .target-card:nth-child(8) { animation-delay: 0.40s; }
         @keyframes fadeIn { to { opacity: 1; transform: translateY(0); } }
-        .target-card:hover { transform: translateY(-6px) scale(1.02); border-color: rgba(255, 215, 0, 0.4); box-shadow: 0 15px 50px rgba(255, 215, 0, 0.15); }
+        .target-card:hover { transform: translateY(-4px) scale(1.01); border-color: rgba(255, 215, 0, 0.3); box-shadow: 0 12px 40px rgba(255, 215, 0, 0.1); }
         .target-card img { width: 100%; height: auto; display: block; border-bottom: 1px solid rgba(255,255,255,0.05); pointer-events: none; }
-        .target-card .info { padding: 12px 14px; display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 4px; background: rgba(0,0,0,0.3); }
-        .target-card .info .uid { font-family: monospace; font-weight: bold; color: #ffd700 !important; font-size: 1rem; text-shadow: 0 0 30px rgba(255, 215, 0, 0.4); }
-        .target-card .info .type { font-size: 0.6rem; background: rgba(255, 215, 0, 0.15); padding: 2px 10px; border-radius: 10px; color: #ffd700 !important; text-transform: uppercase; }
-        .target-card .info .time { font-size: 0.7rem; color: rgba(255,255,255,0.3); display: flex; align-items: center; gap: 4px; }
-        .target-card .info .time i { color: #ffd700 !important; }
-        .target-card .info .added-info { font-size: 0.55rem; color: rgba(255,215,0,0.6); background: rgba(255,215,0,0.08); padding: 2px 8px; border-radius: 6px; width: 100%; margin-top: 4px; text-align: center; }
-        .target-card .info .squad-leader { font-size: 0.6rem; background: rgba(255, 215, 0, 0.15); padding: 2px 8px; border-radius: 10px; color: #ffd700 !important; font-family: monospace; }
-        .search-result { margin-top: 20px; padding: 15px; background: rgba(255,215,0,0.05); border-radius: 12px; border: 1px solid rgba(255,215,0,0.1); }
-        .search-result .result-item { display: flex; justify-content: space-between; align-items: center; padding: 10px; background: rgba(0,0,0,0.3); border-radius: 8px; flex-wrap: wrap; gap: 10px; }
+
+        /* ===== কার্ডের ইনফো রো ===== */
+        .target-row {
+            display: flex;
+            flex-direction: column;
+            padding: 10px 14px;
+            background: rgba(0,0,0,0.4);
+            gap: 6px;
+        }
+        .target-row .top-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 6px;
+        }
+        .target-row .uid-section {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .target-row .uid {
+            font-family: monospace;
+            font-weight: 700;
+            color: #ffd700;
+            font-size: 0.95rem;
+            text-shadow: 0 0 30px rgba(255, 215, 0, 0.3);
+        }
+        .target-row .badge-type {
+            font-size: 0.55rem;
+            padding: 2px 10px;
+            border-radius: 12px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .badge-type.squad { background: rgba(255, 215, 0, 0.2); color: #ffd700; border: 1px solid rgba(255, 215, 0, 0.2); }
+        .badge-type.full { background: rgba(255, 0, 127, 0.2); color: #ff007f; border: 1px solid rgba(255, 0, 127, 0.15); }
+        .badge-type.room { background: rgba(0, 212, 255, 0.15); color: #00d4ff; border: 1px solid rgba(0, 212, 255, 0.12); }
+        .badge-type.auto { background: rgba(0, 255, 204, 0.15); color: #00ffcc; border: 1px solid rgba(0, 255, 204, 0.12); }
+
+        .target-row .time-section {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 0.7rem;
+            color: rgba(255,255,255,0.35);
+        }
+        .target-row .time-section i { color: #ffd700; font-size: 0.6rem; }
+
+        /* ===== মেটা ইনফো (কে ও কেন) ===== */
+        .target-row .meta-info {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 4px 12px;
+            font-size: 0.6rem;
+            color: rgba(255,255,255,0.3);
+            padding-top: 4px;
+            border-top: 1px solid rgba(255,255,255,0.04);
+            margin-top: 2px;
+        }
+        .target-row .meta-info .added-by {
+            color: #ffd700;
+            font-weight: 600;
+        }
+        .target-row .meta-info .reason {
+            color: rgba(255,255,255,0.5);
+            font-style: italic;
+        }
+        .target-row .meta-info .added-time {
+            color: rgba(255,255,255,0.2);
+            font-size: 0.55rem;
+        }
+        .target-row .meta-info .badge-label {
+            background: rgba(255,215,0,0.08);
+            padding: 1px 8px;
+            border-radius: 8px;
+            color: rgba(255,215,0,0.5);
+            font-size: 0.5rem;
+            text-transform: uppercase;
+        }
+
         .empty-state { color: rgba(255,255,255,0.3); text-align: center; padding: 60px 20px; width: 100%; font-size: 1.2rem; }
         .empty-state i { font-size: 3rem; display: block; margin-bottom: 15px; color: rgba(255,255,255,0.1); }
-        .btn { padding: 8px 16px; border: none; border-radius: 8px; font-weight: 600; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; transition: 0.3s; font-size: 0.85rem; }
-        .btn-outline { background: transparent; border: 1px solid rgba(255,255,255,0.15); color: #fff; }
-        .btn-outline:hover { background: rgba(255,255,255,0.05); border-color: rgba(255,255,255,0.3); }
-        .count-badge { background: rgba(255, 215, 0, 0.15); padding: 6px 16px; border-radius: 20px; font-size: 0.95rem; color: #ffd700; }
-        .footer { text-align: center; color: rgba(255,255,255,0.15); font-size: 0.75rem; margin-top: 30px; padding-top: 15px; border-top: 1px solid rgba(255,255,255,0.03); }
-        .refresh-btn { background: rgba(255,215,0,0.1); border: 1px solid rgba(255,215,0,0.2); color: #ffd700; padding: 6px 14px; border-radius: 8px; cursor: pointer; font-size: 0.8rem; transition: 0.3s; }
-        .refresh-btn:hover { background: rgba(255,215,0,0.2); }
+
+        /* ===== সার্চ রেজাল্ট ===== */
+        .search-result { margin-top: 20px; padding: 15px; background: rgba(255,215,0,0.05); border-radius: 12px; border: 1px solid rgba(255,215,0,0.1); display: none; }
+        .search-result .result-item { display: flex; justify-content: space-between; align-items: center; padding: 10px; background: rgba(0,0,0,0.3); border-radius: 8px; flex-wrap: wrap; gap: 10px; }
+        .search-result .result-item .meta { display: flex; gap: 10px; flex-wrap: wrap; font-size: 0.8rem; color: rgba(255,255,255,0.5); }
+        .search-result .result-item .meta .added { color: #ffd700; }
+        .search-result .result-item .meta .reason-text { color: rgba(255,255,255,0.4); font-style: italic; }
+
+        /* ===== মোডাল ===== */
         .modal-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); backdrop-filter: blur(8px); z-index: 1000; justify-content: center; align-items: center; padding: 20px; animation: fadeIn 0.3s ease; }
         .modal-overlay.active { display: flex; }
         .modal-box { background: rgba(15, 15, 40, 0.95); border: 1px solid rgba(255, 215, 0, 0.2); border-radius: 20px; max-width: 700px; width: 100%; max-height: 90vh; overflow-y: auto; padding: 30px; position: relative; box-shadow: 0 20px 80px rgba(0,0,0,0.8); animation: slideUp 0.3s ease; }
@@ -2880,7 +3003,19 @@ TARGETS_TEMPLATE = '''<!DOCTYPE html>
         @keyframes spin { to { transform: rotate(360deg); } }
         .modal-error { text-align: center; padding: 30px; color: #ff4444; }
         .modal-error i { font-size: 2.5rem; display: block; margin-bottom: 15px; }
-        @media (max-width: 600px) { .target-grid { grid-template-columns: 1fr; } .header { flex-direction: column; text-align: center; } .search-box { width: 100%; justify-content: center; } .search-box input { flex: 1; min-width: 120px; } .modal-grid { grid-template-columns: 1fr; } .modal-header { flex-direction: column; text-align: center; } }
+
+        @media (max-width: 600px) { 
+            .target-grid { grid-template-columns: 1fr; } 
+            .header { flex-direction: column; text-align: center; } 
+            .search-box { width: 100%; justify-content: center; } 
+            .search-box input { flex: 1; min-width: 120px; } 
+            .modal-grid { grid-template-columns: 1fr; } 
+            .modal-header { flex-direction: column; text-align: center; } 
+            .target-row .top-row { flex-direction: column; align-items: stretch; text-align: center; } 
+            .target-row .uid-section { justify-content: center; } 
+            .target-row .time-section { justify-content: center; } 
+            .target-row .meta-info { justify-content: center; } 
+        }
     </style>
 </head>
 <body>
@@ -2898,16 +3033,20 @@ TARGETS_TEMPLATE = '''<!DOCTYPE html>
             <a href="/targets/logout" class="btn btn-outline"><i class="fas fa-sign-out-alt"></i> EXIT</a>
         </div>
     </div>
-    <div id="searchResult" style="display:none;" class="search-result">
+    
+    <div id="searchResult" class="search-result">
         <h4 style="margin-bottom:10px;color:#ffd700;"><i class="fas fa-search"></i> Search Result</h4>
         <div id="searchResultContent"></div>
     </div>
+    
     <div id="targetGrid" class="target-grid">
         <div class="empty-state"><i class="fas fa-crosshairs"></i> No active targets</div>
     </div>
-    <div class="footer">MAHIR TARGET VIEWER v1.0 | <i class="fas fa-bolt" style="color:#ffd700;"></i> Click on any target card for full profile</div>
+    
+    <div class="footer">MAHIR TARGET VIEWER v2.0 | <i class="fas fa-bolt" style="color:#ffd700;"></i> Click on any target card for full profile</div>
 </div>
 
+<!-- ===== মোডাল ===== -->
 <div class="modal-overlay" id="profileModal">
     <div class="modal-box">
         <button class="modal-close" onclick="closeModal()">&times;</button>
@@ -2944,25 +3083,71 @@ TARGETS_TEMPLATE = '''<!DOCTYPE html>
         return div.innerHTML;
     }
 
+    function getBadgeClass(type) {
+        const t = (type || '').toUpperCase();
+        if (t === 'SQUAD' || t === 'SQUAD LEADER') return 'squad';
+        if (t === 'FULL' || t === 'FULL SPAM') return 'full';
+        if (t === 'ROOM') return 'room';
+        if (t === 'AUTO' || t === 'SYSTEM') return 'auto';
+        return 'full';
+    }
+
+    function getDisplayType(type) {
+        const t = (type || '').toUpperCase();
+        if (t === 'SQUAD' || t === 'SQUAD LEADER') return '👑 SQUAD';
+        if (t === 'FULL' || t === 'FULL SPAM') return '⚡ FULL';
+        if (t === 'ROOM') return '🚪 ROOM';
+        if (t === 'AUTO' || t === 'SYSTEM') return '🤖 AUTO';
+        return '⚡ FULL';
+    }
+
+    function getAddedByLabel(addedBy) {
+        if (!addedBy || addedBy === 'SYSTEM') return '🤖 SYSTEM';
+        if (addedBy === 'MAHIR') return '👤 MAHIR';
+        return `👤 ${escapeHtml(addedBy)}`;
+    }
+
     function renderTargets(targets) {
         targetCount.textContent = targets.length;
         if (!targets || targets.length === 0) {
             targetGrid.innerHTML = '<div class="empty-state"><i class="fas fa-crosshairs"></i> No active targets</div>';
             return;
         }
-        targetGrid.innerHTML = targets.map((t, index) => `
-            <div class="target-card" style="animation-delay: ${index * 0.05}s" onclick="openProfile('${t.uid}')">
+        targetGrid.innerHTML = targets.map((t, index) => {
+            const badgeClass = getBadgeClass(t.type);
+            const displayType = getDisplayType(t.type);
+            const addedBy = t.added_by || 'MAHIR';
+            const reason = t.reason || 'Manual Start';
+            const timeAgo = t.elapsed_minutes || 0;
+            const timeText = timeAgo < 60 ? `${timeAgo}m` : `${Math.floor(timeAgo/60)}h ${timeAgo%60}m`;
+            const addedTime = t.added_time ? new Date(t.added_time).toLocaleTimeString() : '';
+            
+            return `
+            <div class="target-card" style="animation-delay: ${index * 0.04}s" onclick="openProfile('${t.uid}')">
                 <img src="${t.banner_url}" 
                      alt="Banner" 
                      onerror="this.onerror=null; this.src='https://mahir-photo-url.vercel.app/image/Picsart_26-06-20_16-14-53-925.jpg';">
-                <div class="info">
-                    <span class="uid">🎯 ${t.uid}</span>
-                    ${t.squad_leader ? `<span class="squad-leader">👥 L:${t.squad_leader}</span>` : ''}
-                    <span class="type">${t.type}</span>
-                    <span class="time"><i class="fas fa-clock"></i> ${t.elapsed_minutes}m</span>
+                <div class="target-row">
+                    <div class="top-row">
+                        <div class="uid-section">
+                            <span class="uid">🎯 ${t.uid}</span>
+                            <span class="badge-type ${badgeClass}">${displayType}</span>
+                        </div>
+                        <div class="time-section">
+                            <i class="fas fa-clock"></i>
+                            <span>${timeText}</span>
+                        </div>
+                    </div>
+                    <div class="meta-info">
+                        <span class="added-by">${getAddedByLabel(addedBy)}</span>
+                        <span class="reason">💬 ${escapeHtml(reason)}</span>
+                        ${addedTime ? `<span class="added-time">🕐 ${addedTime}</span>` : ''}
+                        ${t.is_squad_leader ? `<span class="badge-label">👑 LEADER</span>` : ''}
+                    </div>
                 </div>
             </div>
-        `).join('');
+            `;
+        }).join('');
     }
 
     function refreshTargets() {
@@ -2988,12 +3173,10 @@ TARGETS_TEMPLATE = '''<!DOCTYPE html>
 
         try {
             const resp = await fetch(`/api/profile-info/${uid}`);
-            
             if (!resp.ok) {
                 const errorData = await resp.json();
                 throw new Error(errorData.message || 'Failed to fetch profile');
             }
-            
             const data = await resp.json();
 
             const basic = data.basicInfo || {};
@@ -3024,7 +3207,6 @@ TARGETS_TEMPLATE = '''<!DOCTYPE html>
             const petLevel = pet.level || '?';
             const region = basic.region || 'N/A';
             const clanId = clan.clanId || '';
-
             const avatarUrl = basic.headPic ? `https://cdn.jsdelivr.net/gh/ShahGCreator/icon@main/PNG/${basic.headPic}.png` : '';
 
             content.innerHTML = `
@@ -3039,7 +3221,6 @@ TARGETS_TEMPLATE = '''<!DOCTYPE html>
                         </div>
                     </div>
                 </div>
-
                 <div class="modal-grid">
                     <div class="modal-item"><div class="label">🏆 BR Rank</div><div class="value highlight">${getRankEmoji(rank)} ${rank}</div></div>
                     <div class="modal-item"><div class="label">⚔️ CS Rank</div><div class="value gold">${getRankEmoji(csRank)} ${csRank}</div></div>
@@ -3052,16 +3233,13 @@ TARGETS_TEMPLATE = '''<!DOCTYPE html>
                     <div class="modal-item" style="grid-column:1/-1;"><div class="label">🕐 Last Login</div><div class="value" style="color:rgba(255,255,255,0.6);">${lastLogin}</div></div>
                     <div class="modal-item" style="grid-column:1/-1;"><div class="label">📆 Created</div><div class="value" style="color:rgba(255,255,255,0.4);">${created}</div></div>
                 </div>
-
                 <div class="modal-clan">
                     <div class="clan-name">🏛️ ${escapeHtml(clanName)}</div>
                     <div class="clan-detail">Level ${clanLevel} · ${clanMembers}/${clanCapacity} members</div>
                     ${captain.nickname ? `<div class="clan-detail">👑 Leader: ${escapeHtml(captain.nickname)} (${captain.accountId})</div>` : ''}
                     ${clanId ? `<div class="clan-detail" style="font-size:0.65rem;color:rgba(255,255,255,0.2);">Clan ID: ${clanId}</div>` : ''}
                 </div>
-
                 ${signature && signature !== 'No signature' ? `<div class="modal-signature">💬 "${escapeHtml(signature)}"</div>` : ''}
-
                 <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap;justify-content:center;border-top:1px solid rgba(255,255,255,0.05);padding-top:12px;">
                     <span style="font-size:0.6rem;color:rgba(255,255,255,0.2);">📡 Data from mahir-info-api.vercel.app</span>
                     <span style="font-size:0.6rem;color:rgba(255,255,255,0.1);">|</span>
@@ -3083,11 +3261,9 @@ TARGETS_TEMPLATE = '''<!DOCTYPE html>
     function closeModal() {
         document.getElementById('profileModal').classList.remove('active');
     }
-
     document.getElementById('profileModal').addEventListener('click', function(e) {
         if (e.target === this) closeModal();
     });
-
     document.addEventListener('keydown', function(e) {
         if (e.key === 'Escape') closeModal();
     });
@@ -3113,15 +3289,13 @@ TARGETS_TEMPLATE = '''<!DOCTYPE html>
                                     <strong style="color:#ffd700;font-family:monospace;font-size:1.1rem;">🎯 ${target.uid}</strong>
                                     <button onclick="openProfile('${target.uid}')" style="margin-left:10px;padding:4px 12px;background:linear-gradient(135deg,#ffd700,#ffaa00);border:none;border-radius:6px;color:#000;cursor:pointer;font-size:0.7rem;font-weight:600;">📋 View Profile</button>
                                 </div>
-                                <div style="display:flex;gap:10px;flex-wrap:wrap;font-size:0.8rem;color:rgba(255,255,255,0.5);">
-                                    ${target.squad_leader ? `<span>👥 Leader: ${target.squad_leader}</span>` : ''}
-                                    ${target.is_squad_leader ? `<span>👑 SQUAD LEADER</span>` : ''}
+                                <div class="meta">
+                                    <span class="added">👤 ${target.added_by || 'MAHIR'}</span>
+                                    <span class="reason-text">💬 ${target.reason || 'Manual Start'}</span>
+                                    ${target.is_squad_leader ? '<span style="color:#ffd700;">👑 SQUAD LEADER</span>' : ''}
                                     ${target.original_target ? `<span>🎯 From: ${target.original_target}</span>` : ''}
                                     ${target.mode ? `<span>🎮 ${target.mode}</span>` : ''}
-                                    ${target.time_playing ? `<span>⏱ ${target.time_playing}</span>` : ''}
-                                    ${target.last_check ? `<span>🕐 ${target.last_check}</span>` : ''}
                                     <span style="background:rgba(255,215,0,0.15);padding:2px 8px;border-radius:6px;color:#ffd700;">${target.type}</span>
-                                    <span style="background:rgba(255,215,0,0.1);padding:2px 8px;border-radius:6px;color:#ffd700;">👤 ${target.added_by || 'MAHIR'}</span>
                                 </div>
                             </div>
                         `;
@@ -3139,18 +3313,27 @@ TARGETS_TEMPLATE = '''<!DOCTYPE html>
         document.getElementById('searchInput').value = '';
     }
 
+    // Auto-refresh every 3 seconds
     fetch('/api/targets?pass=HUNTERMAHIR')
         .then(r => r.json())
         .then(data => {
             if (data.success) renderTargets(data.targets);
         })
         .catch(() => {});
+
+    setInterval(() => {
+        fetch('/api/targets?pass=HUNTERMAHIR')
+            .then(r => r.json())
+            .then(data => {
+                if (data.success) renderTargets(data.targets);
+            })
+            .catch(() => {});
+    }, 3000);
 </script>
 </body>
 </html>'''
 
-# ==================== HTML_TEMPLATE WITH FILES AND SQUAD LEADER MANAGEMENT ====================
-
+#<!-- ==================== HTML_TEMPLATE - আপডেটেড ভার্সন ==================== -->
 HTML_TEMPLATE = '''<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -3177,8 +3360,9 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
         .control-card h3 { font-size: 0.95rem; margin-bottom: 12px; display: flex; align-items: center; gap: 10px; }
         .control-card h3 i { color: #ff007f; }
         .input-group { display: flex; gap: 10px; flex-wrap: wrap; }
-        .input-group input { flex: 1; padding: 10px 14px; border: 1px solid rgba(255,255,255,0.08); border-radius: 8px; background: rgba(0,0,0,0.4); color: #fff; font-size: 0.9rem; font-family: monospace; outline: none; transition: 0.3s; min-width: 120px; }
-        .input-group input:focus { border-color: #ff007f; box-shadow: 0 0 15px rgba(255,0,127,0.1); }
+        .input-group input, .input-group select { flex: 1; padding: 10px 14px; border: 1px solid rgba(255,255,255,0.08); border-radius: 8px; background: rgba(0,0,0,0.4); color: #fff; font-size: 0.9rem; outline: none; transition: 0.3s; min-width: 120px; }
+        .input-group input:focus, .input-group select:focus { border-color: #ff007f; box-shadow: 0 0 15px rgba(255,0,127,0.1); }
+        .input-group select option { background: #1a1a2e; color: #fff; }
         .btn { padding: 10px 18px; border: none; border-radius: 8px; font-weight: 600; cursor: pointer; transition: all 0.3s; font-size: 0.85rem; display: inline-flex; align-items: center; gap: 6px; }
         .btn-primary { background: linear-gradient(135deg, #ff007f, #7f00ff); color: #fff; }
         .btn-primary:hover { transform: translateY(-2px); box-shadow: 0 5px 20px rgba(255,0,127,0.3); }
@@ -3193,17 +3377,15 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
         .btn-success:hover { transform: translateY(-2px); box-shadow: 0 5px 20px rgba(0,176,155,0.3); }
         .btn-refresh { background: linear-gradient(135deg, #00d4ff, #7f00ff); color: #fff; animation: glow 2s infinite; }
         .btn-refresh:hover { transform: translateY(-2px) scale(1.02); box-shadow: 0 5px 30px rgba(0,212,255,0.4); }
-        @keyframes glow {
-            0%, 100% { box-shadow: 0 0 20px rgba(0,212,255,0.2); }
-            50% { box-shadow: 0 0 40px rgba(0,212,255,0.4); }
-        }
+        @keyframes glow { 0%, 100% { box-shadow: 0 0 20px rgba(0,212,255,0.2); } 50% { box-shadow: 0 0 40px rgba(0,212,255,0.4); } }
         .upload-area { border: 2px dashed rgba(255,255,255,0.08); border-radius: 8px; padding: 15px; text-align: center; cursor: pointer; transition: 0.3s; }
         .upload-area:hover { border-color: rgba(255,0,127,0.3); background: rgba(255,0,127,0.03); }
         .upload-area.dragover { border-color: #ff007f; background: rgba(255,0,127,0.05); }
         .upload-area i { font-size: 1.5rem; color: rgba(255,255,255,0.2); }
         .upload-area p { font-size: 0.8rem; color: rgba(255,255,255,0.3); }
-        .active-list { max-height: 300px; overflow-y: auto; margin-top: 10px; }
-        .active-item { background: rgba(30,30,40,0.6); padding: 10px 14px; margin: 5px 0; border-radius: 8px; display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; border-left: 3px solid #ff007f; gap: 8px; }
+        .active-list { max-height: 400px; overflow-y: auto; margin-top: 10px; }
+        .active-item { background: rgba(30,30,40,0.6); padding: 12px 14px; margin: 5px 0; border-radius: 8px; display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; border-left: 3px solid #ff007f; gap: 8px; }
+        .active-item .main-info { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; flex: 1; }
         .active-uid { font-family: monospace; font-weight: bold; color: #ff007f; font-size: 13px; }
         .active-status { font-size: 10px; padding: 2px 10px; border-radius: 10px; }
         .active-status.solo { background: rgba(0, 255, 204, 0.2); color: #00ffcc; }
@@ -3214,6 +3396,10 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
         .active-status.unknown { background: rgba(255,255,255,0.1); color: rgba(255,255,255,0.4); }
         .active-type { font-size: 10px; color: rgba(255,255,255,0.4); background: rgba(255,255,255,0.05); padding: 2px 10px; border-radius: 10px; }
         .active-time { font-size: 10px; color: rgba(255,255,255,0.3); }
+        .active-meta { font-size: 9px; color: rgba(255,255,255,0.25); display: flex; flex-wrap: wrap; gap: 4px 12px; width: 100%; margin-top: 4px; padding-top: 4px; border-top: 1px solid rgba(255,255,255,0.03); }
+        .active-meta .added-by { color: #ffd700; }
+        .active-meta .reason { color: rgba(255,255,255,0.4); font-style: italic; }
+        .active-meta .time-ago { color: rgba(255,255,255,0.2); }
         .stop-small { background: #eb3349; color: white; border: none; padding: 4px 12px; border-radius: 6px; cursor: pointer; font-size: 10px; font-weight: bold; transition: 0.2s; }
         .stop-small:hover { background: #c0392b; }
         .account-item { background: rgba(30,30,40,0.4); padding: 3px 10px; margin: 3px 4px; border-radius: 6px; font-family: monospace; font-size: 10px; color: #4facfe; display: inline-block; }
@@ -3230,7 +3416,6 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
         @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
         .feature-badge { display: inline-block; background: rgba(0, 212, 255, 0.1); color: #00d4ff; padding: 2px 10px; border-radius: 10px; font-size: 0.6rem; margin-left: 5px; }
         .footer { text-align: center; color: rgba(255,255,255,0.15); font-size: 0.7rem; margin-top: 25px; padding-top: 15px; border-top: 1px solid rgba(255,255,255,0.03); }
-        .console-uid { color: #ff007f; font-weight: bold; }
         .console-success { color: #00ffcc; }
         .console-error { color: #ff3366; }
         .console-warning { color: #ffaa00; }
@@ -3239,7 +3424,6 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
         .refresh-status-text { font-size: 0.7rem; color: rgba(255,255,255,0.4); margin-top: 8px; padding: 8px 12px; background: rgba(0,0,0,0.3); border-radius: 6px; border-left: 3px solid #00d4ff; }
         .refresh-status-text .highlight { color: #00ffcc; }
         .refresh-status-text .error { color: #ff4444; }
-        /* Squad Leader Styles */
         .squad-leader-item { background: rgba(255,215,0,0.05); border-left: 3px solid #ffd700; padding: 8px 12px; margin: 4px 0; border-radius: 6px; display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; font-size: 0.8rem; gap: 6px; }
         .squad-leader-item .uid { color: #ffd700; font-family: monospace; font-weight: bold; }
         .squad-leader-item .expired { color: #ff4444; }
@@ -3252,10 +3436,8 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
         .file-btn .sub { font-size: 0.6rem; color: rgba(255,255,255,0.2); }
         .btn-gold { background: linear-gradient(135deg, #ffd700, #ffaa00); color: #000; }
         .btn-gold:hover { transform: translateY(-2px); box-shadow: 0 5px 20px rgba(255,215,0,0.3); }
-        @media (max-width: 768px) { .controls-grid { grid-template-columns: 1fr; } .input-group { flex-direction: column; } .btn { width: 100%; justify-content: center; } .header { flex-direction: column; text-align: center; } .file-grid { grid-template-columns: 1fr; } }
         .squad-list { max-height: 200px; overflow-y: auto; margin-top: 8px; }
-        .squad-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
-        .squad-actions .btn { flex: 1; min-width: 100px; justify-content: center; }
+        @media (max-width: 768px) { .controls-grid { grid-template-columns: 1fr; } .input-group { flex-direction: column; } .btn { width: 100%; justify-content: center; } .header { flex-direction: column; text-align: center; } .file-grid { grid-template-columns: 1fr; } .active-item .main-info { flex-direction: column; align-items: flex-start; } }
     </style>
 </head>
 <body>
@@ -3265,11 +3447,12 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
             <div>
                 <div class="logo"><i class="fas fa-bolt"></i> MAHIR SYSTEM</div>
                 <div style="color: rgba(255,255,255,0.3); font-size:0.8rem;">
-                    SPAM CONTROL ENGINE v3.2
+                    SPAM CONTROL ENGINE v3.3
                     <span class="feature-badge"><i class="fas fa-sync"></i> Auto Status Check (5s)</span>
-                    <span class="feature-badge"><i class="fas fa-users"></i> Squad Auto-Join (5h)</span>
+                    <span class="feature-badge"><i class="fas fa-users"></i> Squad Auto-Join (2h)</span>
                     <span class="feature-badge"><i class="fas fa-layer-group"></i> ROOM+GROUP</span>
                     <span class="feature-badge"><i class="fas fa-file"></i> File Manager</span>
+                    <span class="feature-badge"><i class="fas fa-info-circle"></i> Added By & Reason</span>
                 </div>
             </div>
             <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
@@ -3305,7 +3488,7 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
             </div>
         </div>
 
-        <!-- ==================== FILE MANAGER CARD ==================== -->
+        <!-- FILE MANAGER -->
         <div class="control-card" style="margin-bottom:20px; border: 1px solid rgba(255,215,0,0.1);">
             <h3><i class="fas fa-folder-open" style="color:#ffd700;"></i> FILE MANAGER</h3>
             <div class="file-grid">
@@ -3339,19 +3522,19 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
             </div>
         </div>
 
-        <!-- ==================== SQUAD LEADER MANAGEMENT CARD ==================== -->
+        <!-- SQUAD LEADER MANAGEMENT -->
         <div class="control-card" style="margin-bottom:20px; border: 1px solid rgba(255,215,0,0.15);">
             <h3><i class="fas fa-crown" style="color:#ffd700;"></i> SQUAD LEADER MANAGEMENT</h3>
             <div style="display:flex; gap:10px; flex-wrap:wrap; margin-bottom:10px;">
                 <button class="btn btn-gold btn-sm" onclick="refreshSquadLeaders()"><i class="fas fa-sync-alt"></i> Refresh List</button>
-                <button class="btn btn-danger btn-sm" onclick="cleanupExpiredSquadLeaders()"><i class="fas fa-trash"></i> Cleanup Expired (5h+)</button>
+                <button class="btn btn-danger btn-sm" onclick="cleanupExpiredSquadLeaders()"><i class="fas fa-trash"></i> Cleanup Expired (2h+)</button>
                 <button class="btn btn-warning btn-sm" onclick="cleanupExpiredTargets()"><i class="fas fa-broom"></i> Cleanup Expired Targets</button>
             </div>
             <div id="squadLeaderList" class="squad-list">
                 <div style="color:rgba(255,255,255,0.3); text-align:center; padding:15px;">Loading squad leaders...</div>
             </div>
             <div style="font-size:0.6rem; color:rgba(255,255,255,0.2); margin-top:5px;">
-                <i class="fas fa-info-circle"></i> Squad leaders expire after 5 hours. Click cleanup to remove expired ones.
+                <i class="fas fa-info-circle"></i> Squad leaders expire after 2 hours. Click cleanup to remove expired ones.
             </div>
         </div>
 
@@ -3359,9 +3542,13 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
             <div class="control-card">
                 <h3><i class="fas fa-fire" style="color:#ff007f;"></i> START SPAM</h3>
                 <div style="font-size:0.7rem; color:rgba(255,255,255,0.4); margin-bottom:8px;">Room Spam + Badge Spam (accs.txt) | Group Spam + Badge Spam</div>
-                <div class="input-group">
-                    <input type="text" id="spamUid" placeholder="Target UID(s) (comma separated)">
-                    <button class="btn btn-primary" onclick="startSpam()"><i class="fas fa-play"></i> START</button>
+                <div class="input-group" style="flex-direction:column; gap:8px;">
+                    <input type="text" id="spamUid" placeholder="Target UID(s) (comma separated)" style="width:100%;">
+                    <div style="display:flex; gap:8px; flex-wrap:wrap; width:100%;">
+                        <input type="text" id="spamAddedBy" placeholder="Added By (e.g. MAHIR)" style="flex:1; min-width:100px;" value="MAHIR">
+                        <input type="text" id="spamReason" placeholder="Reason (e.g. revenge)" style="flex:2; min-width:150px;" value="Manual Start">
+                        <button class="btn btn-primary" onclick="startSpam()" style="flex:0 0 auto;"><i class="fas fa-play"></i> START</button>
+                    </div>
                 </div>
             </div>
             <div class="control-card">
@@ -3376,19 +3563,7 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
             </div>
         </div>
 
-        <div class="controls-grid">
-            <div class="control-card">
-                <h3><i class="fas fa-file" style="color:#4facfe;"></i> FILES</h3>
-                <div style="background:rgba(0,0,0,0.3); padding:10px; border-radius:8px; font-size:0.8rem;">
-                    <div>📁 accs.txt (ACCOUNTS) - <span id="accCount" style="color:rgba(255,255,255,0.4);">0 accounts</span></div>
-                    <div style="display:flex; gap:8px; margin-top:8px; flex-wrap:wrap;">
-                        <button class="btn btn-outline btn-sm" onclick="downloadAccs()"><i class="fas fa-download"></i> accs.txt</button>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <!-- ==================== STATUS REFRESH CARD ==================== -->
+        <!-- STATUS REFRESH -->
         <div class="control-card" style="margin-bottom:20px; border: 1px solid rgba(0, 212, 255, 0.15);">
             <h3><i class="fas fa-sync-alt" style="color:#00d4ff;"></i> STATUS REFRESH</h3>
             <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center;">
@@ -3407,7 +3582,6 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
                 <span style="float:right; font-size:0.6rem; color:rgba(255,255,255,0.2);">Last refresh: <span id="lastRefreshTime">Never</span></span>
             </div>
         </div>
-        <!-- ==================== END: STATUS REFRESH CARD ==================== -->
 
         <div class="control-card" style="margin-bottom:20px;">
             <h3><i class="fas fa-list"></i> ACTIVE TARGETS <span style="font-size:0.6rem; color:rgba(255,255,255,0.3);">(Status auto-check every 5s)</span></h3>
@@ -3419,12 +3593,10 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
         <div class="control-card" style="margin-bottom:20px;">
             <h3><i class="fas fa-terminal"></i> LIVE CONSOLE</h3>
             <div class="console-box" id="consoleBox">
-                <div class="line"><span style="color:rgba(255,255,255,0.3);">[System]</span> <span class="console-success">MAHIR SPAM ENGINE Initialized</span></div>
+                <div class="line"><span style="color:rgba(255,255,255,0.3);">[System]</span> <span class="console-success">MAHIR SPAM ENGINE v3.3 Initialized</span></div>
+                <div class="line"><span style="color:rgba(255,255,255,0.3);">[System]</span> <span class="console-info">Added By & Reason tracking enabled</span></div>
                 <div class="line"><span style="color:rgba(255,255,255,0.3);">[System]</span> <span class="console-info">Status check every 5 seconds</span></div>
-                <div class="line"><span style="color:rgba(255,255,255,0.3);">[System]</span> <span class="console-info">Squad auto-join enabled (5 hours duration)</span></div>
-                <div class="line"><span style="color:rgba(255,255,255,0.3);">[System]</span> <span class="console-info">Accounts: accs.txt</span></div>
-                <div class="line"><span style="color:rgba(255,255,255,0.3);">[System]</span> <span class="console-info">File Manager: Download/Upload targets.txt & squad_data.json</span></div>
-                <div class="line"><span style="color:rgba(255,255,255,0.3);">[System]</span> <span class="console-info">Squad leaders expire after 5 hours</span></div>
+                <div class="line"><span style="color:rgba(255,255,255,0.3);">[System]</span> <span class="console-info">Squad auto-join enabled (2 hours duration)</span></div>
             </div>
         </div>
 
@@ -3435,7 +3607,7 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
             </div>
         </div>
 
-        <div class="footer">MAHIR SYSTEM v3.2 | <i class="fas fa-code"></i> Engine by MAHIR | Status Check: 5s | Squad Auto-Join: 5hours | ROOM+GROUP | File Manager</div>
+        <div class="footer">MAHIR SYSTEM v3.3 | <i class="fas fa-code"></i> Engine by MAHIR | Added By & Reason Tracking | Status Check: 5s | Squad Auto-Join: 2hours</div>
     </div>
 
     <script>
@@ -3465,7 +3637,7 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
             setTimeout(() => t.remove(), 4000);
         }
 
-        // ==================== REFRESH FUNCTIONS ====================
+        // ===== REFRESH FUNCTIONS =====
         function refreshAllStatus() {
             const statusDiv = document.getElementById('refreshStatus');
             const btn = document.querySelector('.btn-refresh');
@@ -3476,25 +3648,18 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
             btn.disabled = true;
             btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Refreshing...';
             
-            fetch('/api/refresh-all-status', { 
-                method: 'GET',
-                headers: { 'Content-Type': 'application/json' }
-            })
+            fetch('/api/refresh-all-status', { method: 'GET' })
             .then(response => {
-                if (!response.ok) {
-                    throw new Error(`HTTP error! status: ${response.status}`);
-                }
+                if (!response.ok) throw new Error(`HTTP ${response.status}`);
                 return response.json();
             })
             .then(d => {
                 if (d.success) {
                     const now = new Date();
                     const timeStr = now.toLocaleTimeString();
-                    if (lastRefreshSpan) {
-                        lastRefreshSpan.textContent = timeStr;
-                    }
+                    if (lastRefreshSpan) lastRefreshSpan.textContent = timeStr;
                     
-                    statusDiv.innerHTML = `<i class="fas fa-check-circle" style="color:#00ffcc;"></i> ✅ ${d.message} (${d.refreshed} targets) [${d.method || 'GET'}] 
+                    statusDiv.innerHTML = `<i class="fas fa-check-circle" style="color:#00ffcc;"></i> ✅ ${d.message} (${d.refreshed} targets) 
                         <span style="float:right; font-size:0.6rem; color:rgba(255,255,255,0.2);">Updated: ${timeStr}</span>`;
                     statusDiv.style.color = '#00ffcc';
                     showToast(`✅ ${d.message}`, 'success');
@@ -3503,7 +3668,7 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
                     const consoleBox = document.getElementById('consoleBox');
                     const line = document.createElement('div');
                     line.className = 'line';
-                    line.innerHTML = `<span style="color:rgba(255,255,255,0.3);">[Refresh]</span> <span class="console-success">✅ Refreshed ${d.refreshed} targets (${d.method || 'GET'})</span>`;
+                    line.innerHTML = `<span style="color:rgba(255,255,255,0.3);">[Refresh]</span> <span class="console-success">✅ Refreshed ${d.refreshed} targets</span>`;
                     consoleBox.appendChild(line);
                     consoleBox.scrollTop = consoleBox.scrollHeight;
                 } else {
@@ -3516,7 +3681,6 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
                 statusDiv.innerHTML = `<i class="fas fa-exclamation-circle" style="color:#ff4444;"></i> ❌ Refresh failed: ${err.message}`;
                 statusDiv.style.color = '#ff4444';
                 showToast('❌ Refresh failed', 'error');
-                console.error('Refresh error:', err);
             })
             .finally(() => {
                 btn.disabled = false;
@@ -3526,14 +3690,8 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
 
         function refreshSingleTarget() {
             const uid = document.getElementById('refreshSingleUid').value.trim();
-            if (!uid) {
-                showToast('Enter a valid UID!', 'error');
-                return;
-            }
-            if (!/^\\d+$/.test(uid)) {
-                showToast('Invalid UID format!', 'error');
-                return;
-            }
+            if (!uid) { showToast('Enter a valid UID!', 'error'); return; }
+            if (!/^\\d+$/.test(uid)) { showToast('Invalid UID format!', 'error'); return; }
             
             const statusDiv = document.getElementById('refreshStatus');
             const lastRefreshSpan = document.getElementById('lastRefreshTime');
@@ -3541,23 +3699,16 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
             statusDiv.innerHTML = `<i class="fas fa-spinner fa-spin" style="color:#00d4ff;"></i> 🔄 Refreshing target ${uid}...`;
             statusDiv.style.color = '#00ffcc';
             
-            fetch(`/api/refresh-target-status/${uid}`, { 
-                method: 'GET',
-                headers: { 'Content-Type': 'application/json' }
-            })
+            fetch(`/api/refresh-target-status/${uid}`, { method: 'GET' })
             .then(response => {
-                if (!response.ok) {
-                    throw new Error(`HTTP error! status: ${response.status}`);
-                }
+                if (!response.ok) throw new Error(`HTTP ${response.status}`);
                 return response.json();
             })
             .then(d => {
                 if (d.success) {
                     const now = new Date();
                     const timeStr = now.toLocaleTimeString();
-                    if (lastRefreshSpan) {
-                        lastRefreshSpan.textContent = timeStr;
-                    }
+                    if (lastRefreshSpan) lastRefreshSpan.textContent = timeStr;
                     
                     statusDiv.innerHTML = `<i class="fas fa-check-circle" style="color:#00ffcc;"></i> ✅ ${d.message} - Status: <span class="highlight">${d.details.status}</span>
                         <span style="float:right; font-size:0.6rem; color:rgba(255,255,255,0.2);">Updated: ${timeStr}</span>`;
@@ -3569,7 +3720,7 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
                     const consoleBox = document.getElementById('consoleBox');
                     const line = document.createElement('div');
                     line.className = 'line';
-                    line.innerHTML = `<span style="color:rgba(255,255,255,0.3);">[Refresh]</span> <span class="console-success">✅ ${uid} → ${d.details.status} (${d.method || 'GET'})</span>`;
+                    line.innerHTML = `<span style="color:rgba(255,255,255,0.3);">[Refresh]</span> <span class="console-success">✅ ${uid} → ${d.details.status}</span>`;
                     consoleBox.appendChild(line);
                     consoleBox.scrollTop = consoleBox.scrollHeight;
                 } else {
@@ -3582,35 +3733,13 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
                 statusDiv.innerHTML = `<i class="fas fa-exclamation-circle" style="color:#ff4444;"></i> ❌ Refresh failed: ${err.message}`;
                 statusDiv.style.color = '#ff4444';
                 showToast('❌ Refresh failed', 'error');
-                console.error('Refresh error:', err);
             });
         }
 
-        document.addEventListener('DOMContentLoaded', function() {
-            const input = document.getElementById('refreshSingleUid');
-            if (input) {
-                input.addEventListener('keypress', function(e) {
-                    if (e.key === 'Enter') {
-                        e.preventDefault();
-                        refreshSingleTarget();
-                    }
-                });
-            }
-        });
-        // ==================== END REFRESH FUNCTIONS ====================
-
-        // ==================== FILE MANAGEMENT FUNCTIONS ====================
+        // ===== FILE MANAGEMENT =====
         function downloadFile(type) {
-            const urls = {
-                'targets': '/api/download/targets',
-                'squad_data': '/api/download/squad_data',
-                'accs': '/api/get/accs'
-            };
-            const names = {
-                'targets': 'target.txt',
-                'squad_data': 'squad_data.json',
-                'accs': 'accs.txt'
-            };
+            const urls = { 'targets': '/api/download/targets', 'squad_data': '/api/download/squad_data', 'accs': '/api/get/accs' };
+            const names = { 'targets': 'target.txt', 'squad_data': 'squad_data.json', 'accs': 'accs.txt' };
             if (urls[type]) {
                 window.location.href = urls[type];
                 showToast(`Downloading ${names[type]}...`, 'info');
@@ -3621,20 +3750,12 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
             const file = input.files[0];
             if (!file) return;
             
-            const urls = {
-                'targets': '/api/upload/targets',
-                'squad_data': '/api/upload/squad_data'
-            };
-            const names = {
-                'targets': 'target.txt',
-                'squad_data': 'squad_data.json'
-            };
-            
+            const urls = { 'targets': '/api/upload/targets', 'squad_data': '/api/upload/squad_data' };
+            const names = { 'targets': 'target.txt', 'squad_data': 'squad_data.json' };
             if (!urls[type]) return;
             
             const fd = new FormData();
             fd.append('file', file);
-            
             showToast(`Uploading ${names[type]}...`, 'info');
             
             fetch(urls[type], { method: 'POST', body: fd })
@@ -3644,22 +3765,15 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
                         showToast(`${d.message}`, 'success');
                         refreshStatus();
                         refreshSquadLeaders();
-                        const consoleBox = document.getElementById('consoleBox');
-                        const line = document.createElement('div');
-                        line.className = 'line';
-                        line.innerHTML = `<span style="color:rgba(255,255,255,0.3);">[File]</span> <span class="console-success">✅ Uploaded ${names[type]}: ${d.total || 'OK'}</span>`;
-                        consoleBox.appendChild(line);
-                        consoleBox.scrollTop = consoleBox.scrollHeight;
                     } else {
                         showToast(`Upload failed: ${d.message}`, 'error');
                     }
                 })
                 .catch(() => showToast('Upload failed', 'error'));
-            
             input.value = '';
         }
 
-        // ==================== SQUAD LEADER FUNCTIONS ====================
+        // ===== SQUAD LEADER FUNCTIONS =====
         function refreshSquadLeaders() {
             const list = document.getElementById('squadLeaderList');
             list.innerHTML = '<div style="color:rgba(255,255,255,0.3); text-align:center; padding:15px;">Loading...</div>';
@@ -3698,8 +3812,7 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
         }
 
         function cleanupExpiredSquadLeaders() {
-            if (!confirm('⚠️ Remove all expired squad leaders (>5 hours)?')) return;
-            
+            if (!confirm('⚠️ Remove all expired squad leaders (>2 hours)?')) return;
             showToast('Cleaning up expired squad leaders...', 'info');
             
             fetch('/api/squad-leaders/cleanup', { method: 'POST' })
@@ -3709,12 +3822,6 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
                         showToast(`✅ ${d.message}`, 'success');
                         refreshSquadLeaders();
                         refreshStatus();
-                        const consoleBox = document.getElementById('consoleBox');
-                        const line = document.createElement('div');
-                        line.className = 'line';
-                        line.innerHTML = `<span style="color:rgba(255,255,255,0.3);">[Cleanup]</span> <span class="console-success">✅ Removed ${d.removed_count} expired squad leaders</span>`;
-                        consoleBox.appendChild(line);
-                        consoleBox.scrollTop = consoleBox.scrollHeight;
                     } else {
                         showToast(`❌ ${d.message}`, 'error');
                     }
@@ -3724,7 +3831,6 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
 
         function cleanupExpiredTargets() {
             if (!confirm('⚠️ Clean up expired targets from active list?')) return;
-            
             showToast('Cleaning up expired targets...', 'info');
             
             fetch('/api/cleanup/expired-targets', { method: 'POST' })
@@ -3809,13 +3915,27 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
 
         function startSpam() {
             const uid = document.getElementById('spamUid').value.trim();
+            const addedBy = document.getElementById('spamAddedBy').value.trim() || 'MAHIR';
+            const reason = document.getElementById('spamReason').value.trim() || 'Manual Start';
+            
             if (!uid) { showToast('Enter target UID(s)!', 'error'); return; }
             const uids = uid.split(',').map(u => u.trim()).filter(u => /^\\d+$/.test(u));
             if (!uids.length) { showToast('Invalid UID(s)!', 'error'); return; }
-            fetch('/api/spam/start', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ uid: uid }) })
-                .then(r => r.json())
-                .then(d => { if (d.success) { showToast(`Started spam on ${uids.length} target(s)`, 'success'); refreshStatus(); } else showToast(d.message || 'Failed', 'error'); })
-                .catch(() => showToast('Error', 'error'));
+            
+            fetch('/api/spam/start', { 
+                method: 'POST', 
+                headers: { 'Content-Type': 'application/json' }, 
+                body: JSON.stringify({ uid: uid, added_by: addedBy, reason: reason }) 
+            })
+            .then(r => r.json())
+            .then(d => { 
+                if (d.success) { 
+                    showToast(`Started spam on ${uids.length} target(s) by ${addedBy}`, 'success'); 
+                    refreshStatus(); 
+                    document.getElementById('spamUid').value = '';
+                } else showToast(d.message || 'Failed', 'error'); 
+            })
+            .catch(() => showToast('Error', 'error'));
         }
 
         function stopSingleSpam() {
@@ -3853,7 +3973,7 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
                         if (s.active_targets && s.active_targets.length > 0) {
                             list.innerHTML = s.active_targets.map(t => `
                                 <div class="active-item">
-                                    <div>
+                                    <div class="main-info">
                                         <span class="active-uid">🎯 ${t.uid}</span>
                                         <span class="active-status ${getStatusClass(t.status)}">${t.status_display || getStatusLabel(t.status)}</span>
                                         ${t.is_squad_leader ? `<span style="font-size:10px;color:#ffd700;">👑 SQUAD LEADER</span>` : ''}
@@ -3862,6 +3982,11 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
                                         <span class="active-time">${t.elapsed_minutes}m</span>
                                     </div>
                                     <button class="stop-small" onclick="quickStop('${t.uid}')">STOP</button>
+                                    <div class="active-meta">
+                                        <span class="added-by">👤 ${t.added_by || 'MAHIR'}</span>
+                                        <span class="reason">💬 ${t.reason || 'Manual Start'}</span>
+                                        ${t.added_time ? `<span class="time-ago">🕐 ${new Date(t.added_time).toLocaleTimeString()}</span>` : ''}
+                                    </div>
                                 </div>
                             `).join('');
                         } else {
@@ -3878,7 +4003,6 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
                         else { c.innerHTML = '<span style="color:rgba(255,255,255,0.3);">No accounts connected</span>'; }
                     }
                 }).catch(() => {});
-            
             getAccountCount();
         }
 
@@ -3886,8 +4010,12 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
         setInterval(refreshStatus, 5000);
         refreshStatus();
         refreshSquadLeaders();
+        
         document.getElementById('spamUid').addEventListener('keypress', e => { if (e.key === 'Enter') startSpam(); });
         document.getElementById('stopUid').addEventListener('keypress', e => { if (e.key === 'Enter') stopSingleSpam(); });
+        document.getElementById('refreshSingleUid').addEventListener('keypress', e => {
+            if (e.key === 'Enter') { e.preventDefault(); refreshSingleTarget(); }
+        });
     </script>
 </body>
 </html>'''
@@ -3903,7 +4031,7 @@ def main():
     ║                                                                      ║
     ║     ✅ Room Spam + Group/Squad *Badge Spam (accs.txt)                ║
     ║     ✅ Auto Status Check: Every 3 seconds                           ║
-    ║     ✅ Squad Auto-Join: 5 hours                                  ║
+    ║     ✅ Squad Auto-Join: 2 hours                                  ║
     ║     ✅ File Manager: Download/Upload targets.txt & squad_data.json   ║
     ║     ✅ Squad Leader Management: View & Cleanup expired               ║
     ║     ✅ Target Viewer: /targets (Pass: HUNTERMAHIR)                  ║
