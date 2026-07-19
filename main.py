@@ -161,7 +161,7 @@ def load_unified_accounts(filename="accs.txt"):
                         processed_list.append({'id': uid, 'password': pwd})
         
         for i, acc in enumerate(processed_list):
-            acc_type = 'group' if (i % 10) < 9 else 'room'
+            acc_type = 'group' if (i % 10) < 5 else 'room'
             acc['type'] = acc_type
             all_accounts.append(acc)
             
