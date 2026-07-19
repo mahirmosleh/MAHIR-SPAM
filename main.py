@@ -3367,14 +3367,6 @@ TARGETS_TEMPLATE = '''<!DOCTYPE html>
         })
         .catch(() => {});
 
-    setInterval(() => {
-        fetch('/api/targets?pass=HUNTERMAHIR')
-            .then(r => r.json())
-            .then(data => {
-                if (data.success) renderTargets(data.targets);
-            })
-            .catch(() => {});
-    }, 3000);
 </script>
 </body>
 </html>'''
