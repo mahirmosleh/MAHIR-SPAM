@@ -210,12 +210,34 @@ def load_saved_targets():
                 if uid.isdigit():
                     start_spam(uid, 'full')
 
-# ==================== STATUS CHECKER ====================
-_ID = '4575086141'
-_PW = 'TORIKUL_TORIKUL_F0GHG'
+# ==================== STATUS CHECKER (DYNAMIC) ====================
+MASTER_ACC_FILE = "master_acc.txt"
+_ID = "" 
+_PW = ""
 _TTL = 6 * 60 * 60
 _cx = {}
 _lk = threading.Lock()
+
+def load_master_credentials():
+    global _ID, _PW
+    try:
+        if os.path.exists(MASTER_ACC_FILE):
+            with open(MASTER_ACC_FILE, "r", encoding="utf-8") as f:
+                lines = [l.strip() for l in f.readlines() if l.strip()]
+                if len(lines) >= 2:
+                    _ID = lines[0]
+                    _PW = lines[1]
+                    print(f"\033[92m✅ Master Credentials Loaded Successfully.\033[0m")
+                else:
+                    print(f"\033[91m❌ Error: master_acc.txt must have 2 lines (ID and PW).\033[0m")
+        else:
+            # ফাইল না থাকলে খালি ভেরিয়েবল থাকবে
+            print(f"\033[91m⚠️ master_acc.txt not found! Please upload via panel.\033[0m")
+    except Exception as e:
+        print(f"Error loading master credentials: {e}")
+
+# স্ক্রিপ্ট শুরু হওয়ার সাথে সাথেই ফাইল থেকে লোড করবে
+load_master_credentials()
 
 _Hr = {
     'User-Agent': 'Dalvik/2.1.0 (Linux; U; Android 9; G011A Build/PI)',
@@ -2278,6 +2300,30 @@ def api_get_accounts_count():
     except Exception as e:
         return jsonify({'success': False, 'message': str(e)}), 500
 
+@app.route('/api/upload/master', methods=['POST'])
+@login_required
+def upload_master_account():
+    if 'file' not in request.files:
+        return jsonify({'success': False, 'message': 'No file uploaded'}), 400
+    
+    file = request.files['file']
+    try:
+        content = file.read().decode('utf-8')
+        # ফাইলটি সেভ করা
+        with open(MASTER_ACC_FILE, 'w', encoding='utf-8') as f:
+            f.write(content)
+        
+        # ফাইল থেকে নতুন ID/PW লোড করা
+        load_master_credentials()
+        
+        # পুরানো লগইন সেশন মুছে ফেলা (যাতে নতুন আইডি দিয়ে লগইন হয়)
+        with _lk:
+            _cx.clear()
+            
+        return jsonify({'success': True, 'message': 'Master Account (master_acc.txt) updated successfully!'})
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
+
 @app.route('/api/upload/accs', methods=['POST'])
 @login_required
 def upload_accs():
@@ -3492,6 +3538,7 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
         <div class="control-card" style="margin-bottom:20px; border: 1px solid rgba(255,215,0,0.1);">
             <h3><i class="fas fa-folder-open" style="color:#ffd700;"></i> FILE MANAGER</h3>
             <div class="file-grid">
+                <!-- target.txt -->
                 <div class="file-btn" onclick="downloadFile('targets')">
                     <i class="fas fa-download"></i>
                     <div class="name">target.txt</div>
@@ -3503,6 +3550,21 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
                     <div class="sub">Upload</div>
                     <input type="file" id="targetsFileInput" accept=".txt" style="display:none;" onchange="uploadFile('targets', this)">
                 </div>
+
+                <!-- master_acc.txt (New) -->
+                <div class="file-btn" onclick="downloadFile('master')">
+                    <i class="fas fa-file-export" style="color: #00ffcc;"></i>
+                    <div class="name">master_acc.txt</div>
+                    <div class="sub">Download ID/PW</div>
+                </div>
+                <div class="file-btn" onclick="document.getElementById('masterFileInput').click()" style="border-color: #00ffcc;">
+                    <i class="fas fa-key" style="color: #00ffcc;"></i>
+                    <div class="name">master_acc.txt</div>
+                    <div class="sub">Upload Admin Info</div>
+                    <input type="file" id="masterFileInput" accept=".txt" style="display:none;" onchange="uploadMasterFile(this)">
+                </div>
+
+                <!-- squad_data.json -->
                 <div class="file-btn" onclick="downloadFile('squad_data')">
                     <i class="fas fa-download"></i>
                     <div class="name">squad_data.json</div>
@@ -3514,6 +3576,8 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
                     <div class="sub">Upload</div>
                     <input type="file" id="squadDataFileInput" accept=".json" style="display:none;" onchange="uploadFile('squad_data', this)">
                 </div>
+
+                <!-- accs.txt -->
                 <div class="file-btn" onclick="downloadFile('accs')">
                     <i class="fas fa-download"></i>
                     <div class="name">accs.txt</div>
@@ -3750,8 +3814,17 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
             const file = input.files[0];
             if (!file) return;
             
-            const urls = { 'targets': '/api/upload/targets', 'squad_data': '/api/upload/squad_data' };
-            const names = { 'targets': 'target.txt', 'squad_data': 'squad_data.json' };
+            const urls = { 
+                'targets': '/api/upload/targets', 
+                'squad_data': '/api/upload/squad_data',
+                'master': '/api/upload/master' // master_acc.txt এর জন্য URL
+            };
+            const names = { 
+                'targets': 'target.txt', 
+                'squad_data': 'squad_data.json',
+                'master': 'master_acc.txt' // master_acc.txt এর নাম
+            };
+            
             if (!urls[type]) return;
             
             const fd = new FormData();
@@ -3765,6 +3838,11 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
                         showToast(`${d.message}`, 'success');
                         refreshStatus();
                         refreshSquadLeaders();
+                        
+                        // যদি মাস্টার একাউন্ট আপলোড হয়, তবে ২ সেকেন্ড পর পেজ রিলোড হবে
+                        if (type === 'master') {
+                            setTimeout(() => location.reload(), 2000);
+                        }
                     } else {
                         showToast(`Upload failed: ${d.message}`, 'error');
                     }
