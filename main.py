@@ -258,62 +258,74 @@ async def encrypted_proto(data_bytes):
 
 async def EncRypTMajoRLoGin(open_id, access_token, version):
     major_login = MajoRLoGinrEq_pb2.MajorLogin()
-    major_login.event_time = str(datetime.now())[:-7]
-    major_login.game_name = "free fire"
-    major_login.platform_id = 2
-    major_login.client_version = FREEFIRE_VERSION_NAME
-    major_login.client_version_code = "2024010012"
-    major_login.system_software = "Android OS 11 / API-30 (RQ3A.210805.001)"
-    major_login.system_hardware = "Handheld"
-    major_login.device_type = "Handheld"
-    major_login.telecom_operator = "Verizon"
-    major_login.network_operator_a = "Verizon"
-    major_login.network_type = "WIFI"
-    major_login.network_type_a = "WIFI"
-    major_login.screen_width = 1080
-    major_login.screen_height = 2400
-    major_login.screen_dpi = "440"
-    major_login.processor_details = "ARMv8"
-    major_login.memory = 6144
-    major_login.gpu_renderer = "Adreno (TM) 650"
-    major_login.gpu_version = "OpenGL ES 3.2 V@1.50"
-    major_login.graphics_api = "OpenGLES3"
-    major_login.unique_device_id = "Google|34a7dcdf-a7d5-4cb6-8d7e-3b0e448a0c57"
-    major_login.language = "en"
-    major_login.open_id = open_id
+    
+    # আপনার দেওয়া JSON ডাটা অনুযায়ী আপডেট
+    major_login.event_time = str(datetime.now())[:-7] # Field 3
+    major_login.game_name = "free fire"           # Field 4
+    major_login.platform_id = 1        # Field 5 (JSON এ ১ ছিল)
+    major_login.client_version = FREEFIRE_VERSION_NAME       # Field 7
+    major_login.system_software = "Android OS 15 / API-35 (AP3A.240617.008/T.R4T2.230617d-33f5e)" # Field 8
+    major_login.system_hardware = "Handheld"       # Field 9
+    major_login.telecom_operator = "Robi"          # Field 10
+    major_login.network_type = "WIFI"              # Field 11
+    major_login.screen_width = 1666                # Field 12
+    major_login.screen_height = 750                # Field 13
+    major_login.screen_dpi = "314"                 # Field 14
+    major_login.processor_details = "ARM64 FP ASIMD AES | 2000 | 8" # Field 15
+    major_login.memory = 7723                      # Field 16
+    major_login.gpu_renderer = "Mali-G52 MC2"      # Field 17
+    major_login.gpu_version = "OpenGL ES 3.2 v1.r49p1-03bet0.19498e0ae1d5dac223383c39a2e58f04" # Field 18
+    major_login.unique_device_id = "Google|9683cec2-b6fc-424c-aa18-d32bc0e0af87" # Field 19
+    
+    major_login.language = "en"                    # Field 21
+    major_login.open_id = open_id                  # Field 22 (Dynamic)
     major_login.open_id_type = "4"
-    major_login.login_open_id_type = 4
-    major_login.access_token = access_token
+    major_login.login_open_id_type = 4             # Field 30
+    major_login.access_token = access_token        # Field 29 (Dynamic)
     major_login.login_by = 3
+    major_login.device_type = "Handheld"           # Field 24
+    
     major_login.platform_sdk_id = 2
     major_login.origin_platform_type = "4"
     major_login.primary_platform_type = "4"
     
+    # নেটওয়ার্ক অপারেটর এবং টাইপ (Field 41, 42)
+    major_login.network_operator_a = "Robi"        # Field 41
+    major_login.network_type_a = "WIFI"            # Field 42
+
+    # মেমোরি স্টেট
     major_login.memory_available.version = 55
     major_login.memory_available.hidden_value = 81
     
-    major_login.external_storage_total = 128512
-    major_login.external_storage_available = random.randint(38000, 52000)
-    major_login.internal_storage_total = 110731
-    major_login.internal_storage_available = random.randint(18000, 32000)
-    major_login.game_disk_storage_total = 26628
-    major_login.game_disk_storage_available = random.randint(18000, 25000)
-    major_login.external_sdcard_total_storage = 119234
-    major_login.external_sdcard_avail_storage = random.randint(25000, 60000)
-    major_login.library_path = "/data/app/~~random/base.apk"
-    major_login.library_token = "hash|base.apk"
-    major_login.client_using_version = "7428b253defc164018c604a1ebbfebdf"
-    major_login.supported_astc_bitset = 16383
-    major_login.analytics_detail = b"FwQVTgUPX1UaUllDDwcWCRBpWAUOUgsvA1snWlBaO1kFYg=="
-    major_login.loading_time = random.randint(9000, 18000)
-    major_login.release_channel = "android"
-    major_login.if_push = 1
+    # স্টোরেজ ডাটা (Field 60-67)
+    major_login.external_storage_total = 225554    # Field 60
+    major_login.external_storage_available = 77192 # Field 61
+    major_login.internal_storage_total = 225554    # Field 65
+    major_login.internal_storage_available = 77716 # Field 64
+    major_login.game_disk_storage_total = 225554   # Field 67
+    major_login.game_disk_storage_available = 77716 # Field 66
+    
+    # ফাইল পাথ এবং টোকেন (Field 74, 77)
+    major_login.library_path = "/data/app/~~eI6I6W4wOsVjxgnf1TGOiw==/com.dts.freefireth-E-hRAzA1WRAwmVJah_awUQ==/lib/arm64" # Field 74
+    major_login.library_token = "4c322aeb56444feaa151d1ea91a8f7f2|/data/app/~~eI6I6W4wOsVjxgnf1TGOiw==/com.dts.freefireth-E-hRAzA1WRAwmVJah_awUQ==/base.apk" # Field 77
+    
+    major_login.client_using_version = "7428b253defc164018c604a1ebbfebdf" # Field 57
+    major_login.supported_astc_bitset = 8191       # Field 87
+    
+    # Analytics Detail (Field 94) - এটি বাইটস হিসেবে থাকে
+    major_login.analytics_detail = b"KqsHT20lrgH2VZSZVBrjiMQlH1D4ByEnCuAp9O88Z77L10j7f3Nyn/PzA3fYYKorO4qAlimdHPTie8ttBgw98SG36+U=" 
+    
+    major_login.loading_time = 111207              # Field 95
+    major_login.release_channel = "android"        # Field 93
+    major_login.if_push = 1                        # Field 97
     major_login.is_vpn = 0
     major_login.cpu_type = 2
-    major_login.cpu_architecture = "64"
-    major_login.android_engine_init_flag = 110009
+    major_login.cpu_architecture = "64"            # Field 81
+    major_login.client_version_code = "2019120828" # Field 83
+    major_login.graphics_api = "OpenGLES2"         # Field 86
+    major_login.android_engine_init_flag = 1003114253 # Field 102 (Numeric part taken)
 
-    serialized_data = major_login.SerializeToString()
+    string = major_login.SerializeToString()
     return await encrypted_proto(serialized_data)
 
 def _rdVr(data, pos):
@@ -1445,70 +1457,85 @@ class FF_CLient():
         }
         try:
             major_login = MajoRLoGinrEq_pb2.MajorLogin()
-            major_login.event_time = str(datetime.now())[:-7]
-            major_login.game_name = "free fire"
-            major_login.platform_id = 2
-            major_login.client_version = FREEFIRE_VERSION_NAME
-            major_login.client_version_code = "2024010012"
-            major_login.system_software = "Android OS 11 / API-30 (RQ3A.210805.001)"
-            major_login.system_hardware = "Handheld"
-            major_login.device_type = "Handheld"
-            major_login.telecom_operator = "Verizon"
-            major_login.network_operator_a = "Verizon"
-            major_login.network_type = "WIFI"
-            major_login.network_type_a = "WIFI"
-            major_login.screen_width = 1080
-            major_login.screen_height = 2400
-            major_login.screen_dpi = "440"
-            major_login.processor_details = "ARMv8"
-            major_login.memory = 6144
-            major_login.gpu_renderer = "Adreno (TM) 650"
-            major_login.gpu_version = "OpenGL ES 3.2 V@1.50"
-            major_login.graphics_api = "OpenGLES3"
-            major_login.unique_device_id = "Google|34a7dcdf-a7d5-4cb6-8d7e-3b0e448a0c57"
-            major_login.language = "en"
-            major_login.open_id = open_id
+            
+            # --- আপনার দেওয়া নতুন ডেটা (Android 15 / OB54) ---
+            major_login.event_time = str(datetime.now())[:-7]                # Field 3
+            major_login.game_name = "free fire"                              # Field 4
+            major_login.platform_id = 1                                      # Field 5 (Android)
+            major_login.client_version = FREEFIRE_VERSION_NAME               # Field 7
+            major_login.system_software = "Android OS 15 / API-35 (AP3A.240617.008/T.R4T2.230617d-33f5e)" # Field 8
+            major_login.system_hardware = "Handheld"                         # Field 9
+            major_login.telecom_operator = "Robi"                            # Field 10
+            major_login.network_type = "WIFI"                                # Field 11
+            major_login.screen_width = 1666                                  # Field 12
+            major_login.screen_height = 750                                  # Field 13
+            major_login.screen_dpi = "314"                                   # Field 14
+            major_login.processor_details = "ARM64 FP ASIMD AES | 2000 | 8"   # Field 15
+            major_login.memory = 7723                                        # Field 16
+            major_login.gpu_renderer = "Mali-G52 MC2"                        # Field 17
+            major_login.gpu_version = "OpenGL ES 3.2 v1.r49p1-03bet0.19498e0ae1d5dac223383c39a2e58f04" # Field 18
+            major_login.unique_device_id = "Google|9683cec2-b6fc-424c-aa18-d32bc0e0af87" # Field 19
+            
+            major_login.language = "en"                                      # Field 21
+            major_login.open_id = open_id                                    # Field 22
             major_login.open_id_type = "4"
-            major_login.login_open_id_type = 4
-            major_login.access_token = access_token
+            major_login.login_open_id_type = 4                               # Field 30
+            major_login.access_token = access_token                          # Field 29
             major_login.login_by = 3
+            major_login.device_type = "Handheld"                             # Field 24
+            
             major_login.platform_sdk_id = 2
             major_login.origin_platform_type = "4"
             major_login.primary_platform_type = "4"
-            memory_available = major_login.memory_available
-            memory_available.version = 55
-            memory_available.hidden_value = 81
-            major_login.external_storage_total = 128512
-            major_login.external_storage_available = random.randint(38000,52000)
-            major_login.internal_storage_total = 110731
-            major_login.internal_storage_available = random.randint(18000,32000)
-            major_login.game_disk_storage_total = 26628
-            major_login.game_disk_storage_available = random.randint(18000,28080)
-            major_login.external_sdcard_total_storage = 119234
-            major_login.external_sdcard_avail_storage = random.randint(28080,60000)
-            major_login.library_path = "/data/app/~~random/base.apk"
-            major_login.library_token = "hash|base.apk"
+            
+            # নেটওয়ার্ক অপারেটর (Field 41, 42)
+            major_login.network_operator_a = "Robi"
+            major_login.network_type_a = "WIFI"
+
+            # মেমোরি স্টেট
+            major_login.memory_available.version = 55
+            major_login.memory_available.hidden_value = 81
+            
+            # স্টোরেজ ডাটা (Field 60-67)
+            major_login.external_storage_total = 225554
+            major_login.external_storage_available = random.randint(77000, 78000)
+            major_login.internal_storage_total = 225554
+            major_login.internal_storage_available = random.randint(77000, 78000)
+            major_login.game_disk_storage_total = 225554
+            major_login.game_disk_storage_available = random.randint(77000, 78000)
+            
+            # ফাইল পাথ
+            major_login.library_path = "/data/app/~~eI6I6W4wOsVjxgnf1TGOiw==/com.dts.freefireth-E-hRAzA1WRAwmVJah_awUQ==/lib/arm64"
+            major_login.library_token = "4c322aeb56444feaa151d1ea91a8f7f2|/data/app/~~eI6I6W4wOsVjxgnf1TGOiw==/com.dts.freefireth-E-hRAzA1WRAwmVJah_awUQ==/base.apk"
+            
             major_login.client_using_version = "7428b253defc164018c604a1ebbfebdf"
-            major_login.supported_astc_bitset = 16383
-            major_login.analytics_detail = b"FwQVTgUPX1UaUllDDwcWCRBpWAUOUgsvA1snWlBaO1kFYg=="
-            major_login.loading_time = random.randint(9000,18000)
+            major_login.supported_astc_bitset = 8191
+            
+            # Analytics Detail (নতুন বাইটস ভ্যালু)
+            major_login.analytics_detail = b"KqsHT20lrgH2VZSZVBrjiMQlH1D4ByEnCuAp9O88Z77L10j7f3Nyn/PzA3fYYKorO4qAlimdHPTie8ttBgw98SG36+U=" 
+            
+            major_login.loading_time = 111207
             major_login.release_channel = "android"
             major_login.if_push = 1
             major_login.is_vpn = 0
             major_login.cpu_type = 2
             major_login.cpu_architecture = "64"
-            major_login.android_engine_init_flag = 110009
+            major_login.client_version_code = "2019120828"
+            major_login.graphics_api = "OpenGLES2"
+            major_login.android_engine_init_flag = 1003114253
 
             raw_data = major_login.SerializeToString()
             key = b'Yg&tc%DEuh6%Zc^8'
             iv = b'6oyZDr22E3ychjM%'
             cipher = AES.new(key, AES.MODE_CBC, iv)
             payload = cipher.encrypt(pad(raw_data, 16))
-        except:
+        except Exception as e:
+            print(f"Error packing proto: {e}")
             time.sleep(5)
             return self.ToKen_GeneRaTe(access_token, open_id)
 
         resp = requests.post(url, headers=headers, data=payload, verify=False, timeout=10)
+        # বাকি লজিক আপনার আগের কোড অনুযায়ী...
         if resp.status_code == 200:
             try:
                 data = json.loads(DeCode_PackEt(resp.content.hex()))
