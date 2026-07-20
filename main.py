@@ -262,7 +262,7 @@ async def EncRypTMajoRLoGin(open_id, access_token, version):
     # আপনার দেওয়া JSON ডাটা অনুযায়ী আপডেট
     major_login.event_time = str(datetime.now())[:-7] # Field 3
     major_login.game_name = "free fire"           # Field 4
-    major_login.platform_id = 1        # Field 5 (JSON এ ১ ছিল)
+    major_login.platform_id = 2        # Field 5 (JSON এ ১ ছিল)
     major_login.client_version = FREEFIRE_VERSION_NAME       # Field 7
     major_login.system_software = "Android OS 15 / API-35 (AP3A.240617.008/T.R4T2.230617d-33f5e)" # Field 8
     major_login.system_hardware = "Handheld"       # Field 9
@@ -325,7 +325,7 @@ async def EncRypTMajoRLoGin(open_id, access_token, version):
     major_login.graphics_api = "OpenGLES2"         # Field 86
     major_login.android_engine_init_flag = 1003114253 # Field 102 (Numeric part taken)
 
-    string = major_login.SerializeToString()
+    serialized_data = major_login.SerializeToString()
     return await encrypted_proto(serialized_data)
 
 def _rdVr(data, pos):
