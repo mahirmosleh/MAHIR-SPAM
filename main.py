@@ -210,34 +210,12 @@ def load_saved_targets():
                 if uid.isdigit():
                     start_spam(uid, 'full')
 
-# ==================== STATUS CHECKER (DYNAMIC) ====================
-MASTER_ACC_FILE = "master_acc.txt"
-_ID = "" 
-_PW = ""
+# ==================== STATUS CHECKER ====================
+_ID = '5649294103'
+_PW = 'D3E3F9FD27EE1E01DF23CB4FAB5B9C4161F397BC494A9747171D358A33874CEE'
 _TTL = 6 * 60 * 60
 _cx = {}
 _lk = threading.Lock()
-
-def load_master_credentials():
-    global _ID, _PW
-    try:
-        if os.path.exists(MASTER_ACC_FILE):
-            with open(MASTER_ACC_FILE, "r", encoding="utf-8") as f:
-                lines = [l.strip() for l in f.readlines() if l.strip()]
-                if len(lines) >= 2:
-                    _ID = lines[0]
-                    _PW = lines[1]
-                    print(f"\033[92m✅ Master Credentials Loaded Successfully.\033[0m")
-                else:
-                    print(f"\033[91m❌ Error: master_acc.txt must have 2 lines (ID and PW).\033[0m")
-        else:
-            # ফাইল না থাকলে খালি ভেরিয়েবল থাকবে
-            print(f"\033[91m⚠️ master_acc.txt not found! Please upload via panel.\033[0m")
-    except Exception as e:
-        print(f"Error loading master credentials: {e}")
-
-# স্ক্রিপ্ট শুরু হওয়ার সাথে সাথেই ফাইল থেকে লোড করবে
-load_master_credentials()
 
 _Hr = {
     'User-Agent': 'Dalvik/2.1.0 (Linux; U; Android 9; G011A Build/PI)',
@@ -259,71 +237,65 @@ async def encrypted_proto(data_bytes):
 async def EncRypTMajoRLoGin(open_id, access_token, version):
     major_login = MajoRLoGinrEq_pb2.MajorLogin()
     
-    # আপনার দেওয়া JSON ডাটা অনুযায়ী আপডেট
-    major_login.event_time = str(datetime.now())[:-7] # Field 3
-    major_login.game_name = "free fire"           # Field 4
-    major_login.platform_id = 2        # Field 5 (JSON এ ১ ছিল)
-    major_login.client_version = FREEFIRE_VERSION_NAME       # Field 7
-    major_login.system_software = "Android OS 15 / API-35 (AP3A.240617.008/T.R4T2.230617d-33f5e)" # Field 8
-    major_login.system_hardware = "Handheld"       # Field 9
-    major_login.telecom_operator = "Robi"          # Field 10
-    major_login.network_type = "WIFI"              # Field 11
-    major_login.screen_width = 1666                # Field 12
-    major_login.screen_height = 750                # Field 13
-    major_login.screen_dpi = "314"                 # Field 14
-    major_login.processor_details = "ARM64 FP ASIMD AES | 2000 | 8" # Field 15
-    major_login.memory = 7723                      # Field 16
-    major_login.gpu_renderer = "Mali-G52 MC2"      # Field 17
-    major_login.gpu_version = "OpenGL ES 3.2 v1.r49p1-03bet0.19498e0ae1d5dac223383c39a2e58f04" # Field 18
-    major_login.unique_device_id = "Google|9683cec2-b6fc-424c-aa18-d32bc0e0af87" # Field 19
+    major_login.event_time = str(datetime.now())[:-7]
+    major_login.game_name = "free fire"
+    major_login.platform_id = 2
+    major_login.client_version = FREEFIRE_VERSION_NAME
+    major_login.system_software = "Android OS 15 / API-35 (AP3A.240617.008/T.R4T2.230617d-33f5e)"
+    major_login.system_hardware = "Handheld"
+    major_login.telecom_operator = "Robi"
+    major_login.network_type = "WIFI"
+    major_login.screen_width = 1666
+    major_login.screen_height = 750
+    major_login.screen_dpi = "314"
+    major_login.processor_details = "ARM64 FP ASIMD AES | 2000 | 8"
+    major_login.memory = 7723
+    major_login.gpu_renderer = "Mali-G52 MC2"
+    major_login.gpu_version = "OpenGL ES 3.2 v1.r49p1-03bet0.19498e0ae1d5dac223383c39a2e58f04"
+    major_login.unique_device_id = "Google|9683cec2-b6fc-424c-aa18-d32bc0e0af87"
     
-    major_login.language = "en"                    # Field 21
-    major_login.open_id = open_id                  # Field 22 (Dynamic)
+    major_login.language = "en"
+    major_login.open_id = open_id
     major_login.open_id_type = "4"
-    major_login.login_open_id_type = 4             # Field 30
-    major_login.access_token = access_token        # Field 29 (Dynamic)
+    major_login.login_open_id_type = 4
+    major_login.access_token = access_token
     major_login.login_by = 3
-    major_login.device_type = "Handheld"           # Field 24
+    major_login.device_type = "Handheld"
     
     major_login.platform_sdk_id = 2
     major_login.origin_platform_type = "4"
     major_login.primary_platform_type = "4"
     
-    # নেটওয়ার্ক অপারেটর এবং টাইপ (Field 41, 42)
-    major_login.network_operator_a = "Robi"        # Field 41
-    major_login.network_type_a = "WIFI"            # Field 42
+    major_login.network_operator_a = "Robi"
+    major_login.network_type_a = "WIFI"
 
-    # মেমোরি স্টেট
     major_login.memory_available.version = 55
     major_login.memory_available.hidden_value = 81
     
-    # স্টোরেজ ডাটা (Field 60-67)
-    major_login.external_storage_total = 225554    # Field 60
-    major_login.external_storage_available = 77192 # Field 61
-    major_login.internal_storage_total = 225554    # Field 65
-    major_login.internal_storage_available = 77716 # Field 64
-    major_login.game_disk_storage_total = 225554   # Field 67
-    major_login.game_disk_storage_available = 77716 # Field 66
+    major_login.external_storage_total = 225554
+    major_login.external_storage_available = 77192
+    major_login.internal_storage_total = 225554
+    major_login.internal_storage_available = 77716
+    major_login.game_disk_storage_total = 225554
+    major_login.game_disk_storage_available = 77716
     
-    # ফাইল পাথ এবং টোকেন (Field 74, 77)
-    major_login.library_path = "/data/app/~~eI6I6W4wOsVjxgnf1TGOiw==/com.dts.freefireth-E-hRAzA1WRAwmVJah_awUQ==/lib/arm64" # Field 74
-    major_login.library_token = "4c322aeb56444feaa151d1ea91a8f7f2|/data/app/~~eI6I6W4wOsVjxgnf1TGOiw==/com.dts.freefireth-E-hRAzA1WRAwmVJah_awUQ==/base.apk" # Field 77
+    major_login.library_path = "/data/app/~~eI6I6W4wOsVjxgnf1TGOiw==/com.dts.freefireth-E-hRAzA1WRAwmVJah_awUQ==/lib/arm64"
+    major_login.library_token = "4c322aeb56444feaa151d1ea91a8f7f2|/data/app/~~eI6I6W4wOsVjxgnf1TGOiw==/com.dts.freefireth-E-hRAzA1WRAwmVJah_awUQ==/base.apk"
     
-    major_login.client_using_version = "7428b253defc164018c604a1ebbfebdf" # Field 57
-    major_login.supported_astc_bitset = 8191       # Field 87
+    major_login.client_using_version = "7428b253defc164018c604a1ebbfebdf"
+    major_login.supported_astc_bitset = 8191
     
-    # Analytics Detail (Field 94) - এটি বাইটস হিসেবে থাকে
     major_login.analytics_detail = b"KqsHT20lrgH2VZSZVBrjiMQlH1D4ByEnCuAp9O88Z77L10j7f3Nyn/PzA3fYYKorO4qAlimdHPTie8ttBgw98SG36+U=" 
     
-    major_login.loading_time = 111207              # Field 95
-    major_login.release_channel = "android"        # Field 93
-    major_login.if_push = 1                        # Field 97
+    major_login.loading_time = 111207
+    major_login.release_channel = "android"
+    major_login.if_push = 1
     major_login.is_vpn = 0
     major_login.cpu_type = 2
-    major_login.cpu_architecture = "64"            # Field 81
-    major_login.client_version_code = "2019120828" # Field 83
-    major_login.graphics_api = "OpenGLES2"         # Field 86
-    major_login.android_engine_init_flag = 1003114253 # Field 102 (Numeric part taken)
+    major_login.cpu_architecture = "64"
+    major_login.client_version_code = "2019120828"
+    major_login.graphics_api = "OpenGLES2"
+    major_login.android_engine_init_flag = 1003114253
 
     serialized_data = major_login.SerializeToString()
     return await encrypted_proto(serialized_data)
