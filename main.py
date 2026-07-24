@@ -161,14 +161,14 @@ def load_unified_accounts(filename="accs.txt"):
                         processed_list.append({'id': uid, 'password': pwd})
         
         for i, acc in enumerate(processed_list):
-            acc_type = 'group' if (i % 10) < 9 else 'room'
+            acc_type = 'group'  # সব অ্যাকাউন্ট গ্রুপ হিসেবে চিহ্নিত
             acc['type'] = acc_type
             all_accounts.append(acc)
             
         group_count = len([a for a in all_accounts if a['type'] == 'group'])
-        room_count = len([a for a in all_accounts if a['type'] == 'room'])
+        room_count = 0  # রুম অ্যাকাউন্ট নেই
         
-        print(f"{G}📦 Total Loaded: {len(all_accounts)} (Group: {group_count}, Room: {room_count}){RS}")
+        print(f"{G}📦 Total Loaded: {len(all_accounts)} (All Group){RS}")
     except Exception as e:
         print(f"{R}❌ Error loading accounts: {e}{RS}")
     
@@ -438,7 +438,7 @@ def _pRoom(pkt):
         'emulator': bool(rd.get('17', {}).get('data', 1)),
     }
 
-async def _rAll(reader, timeout=0.1): # ভ্যালু কমিয়ে ০.১ করা হয়েছে যাতে দ্রুত কাজ করে
+async def _rAll(reader, timeout=0.1):
     buf = b''
     while True:
         try: chunk = await asyncio.wait_for(reader.read(65536), timeout=timeout)
@@ -555,11 +555,11 @@ async def check_target_status_async(uid):
         try:
             wr.write(bytes.fromhex(sx['auth']))
             await wr.drain()
-            await _rAll(rd, timeout=0.2) # হ্যান্ডশেকের জন্য ০.২ সেকেন্ড যথেষ্ট
+            await _rAll(rd, timeout=0.2)
             pkt = await _stPkt(uid, sx['key'], sx['iv'])
             wr.write(pkt)
             await wr.drain()
-            buf = await _rAll(rd, timeout=0.6) # রেসপন্স পাওয়ার জন্য ০.৬ সেকেন্ড যথেষ্ট
+            buf = await _rAll(rd, timeout=0.6)
             if not buf:
                 return {'status': 'OFFLINE'}
             pt, pl = await _scan(buf, sx['key'], sx['iv'])
@@ -608,7 +608,7 @@ def check_target_status_sync(uid):
     
     thread = Thread(target=_run, daemon=True)
     thread.start()
-    thread.join(timeout=3.0) # ১৫ সেকেন্ডের বদলে ৩ সেকেন্ড করা হয়েছে
+    thread.join(timeout=3.0)
     return result
 
 # ==================== PACKET CREATION FUNCTIONS ====================
@@ -815,49 +815,7 @@ def create_change_squad_size_packet(key, iv, target_uid, region="BD"):
         print(f"{R}❌ Change squad size packet error: {e}{RS}")
         return None
 
-# ==================== SPAM WORKER FUNCTIONS ====================
-def send_room_badge_spam(client, target_uid, badge_value):
-    total_sent = 0
-    
-    try:
-        if not hasattr(client, 'CliEnts2') or not client.key:
-            return 0
-        
-        try:
-            open_pkt = openroom(client.key, client.iv)
-            if open_pkt:
-                try:
-                    client.CliEnts2.send(open_pkt)
-                except:
-                    pass
-            
-            spam_pkt = spmroom(client.key, client.iv, target_uid)
-            if spam_pkt:
-                try:
-                    client.CliEnts2.send(spam_pkt)
-                    total_sent += 1
-                except:
-                    pass
-        except:
-            pass
-
-        # লুপ সরিয়ে দেওয়া হয়েছে, এখন সরাসরি badge_value ব্যবহার করবে
-        try:
-            badge_pkt = create_badge_join_packet(client.key, client.iv, target_uid, badge_value)
-            if badge_pkt:
-                try:
-                    client.CliEnts2.send(badge_pkt)
-                    total_sent += 1
-                except:
-                    pass
-        except:
-            pass
-                
-    except Exception as e:
-        pass
-    
-    return total_sent
-
+# ==================== SPAM WORKER FUNCTIONS - শুধু গ্রুপ স্প্যাম ====================
 def send_group_badge_spam(client, target_uid, badge_value):
     total_sent = 0
     
@@ -865,6 +823,7 @@ def send_group_badge_spam(client, target_uid, badge_value):
         if not hasattr(client, 'CliEnts2') or not client.key:
             return 0
         
+        # ১. স্কোয়াড ওপেন করা
         open_pkt = create_open_squad_packet(client.key, client.iv)
         if open_pkt:
             try:
@@ -874,6 +833,7 @@ def send_group_badge_spam(client, target_uid, badge_value):
             except:
                 pass
         
+        # ২. স্কোয়াড সাইজ পরিবর্তন
         size_pkt = create_change_squad_size_packet(client.key, client.iv, int(client.id))
         if size_pkt:
             try:
@@ -883,6 +843,7 @@ def send_group_badge_spam(client, target_uid, badge_value):
             except:
                 pass
         
+        # ৩. স্কোয়াড ইনভাইট পাঠানো
         invite_pkt = create_squad_invite_packet(client.key, client.iv, target_uid)
         if invite_pkt:
             try:
@@ -892,7 +853,7 @@ def send_group_badge_spam(client, target_uid, badge_value):
             except:
                 pass
         
-        # লুপ সরিয়ে দেওয়া হয়েছে, এখন সরাসরি badge_value ব্যবহার করবে
+        # ৪. ব্যাজ জয়েন প্যাকেট
         try:
             badge_pkt = create_badge_join_packet(client.key, client.iv, target_uid, badge_value)
             if badge_pkt:
@@ -908,6 +869,10 @@ def send_group_badge_spam(client, target_uid, badge_value):
         pass
     
     return total_sent
+
+def send_room_badge_spam(client, target_uid, badge_value):
+    # রুম স্প্যাম সরানো হয়েছে - শুধু গ্রুপ স্প্যাম কাজ করবে
+    return 0
 
 def send_squad_join_packet(client, target_uid, squad_uid):
     try:
@@ -989,8 +954,8 @@ def add_squad_leader_as_target(squad_leader_uid, original_target_uid):
             'is_squad_leader': True,
             'original_target': original_target_uid,
             'added_by_squad': True,
-            'added_by': 'SYSTEM',  # 👈 সিস্টেম দ্বারা এড করা হয়েছে
-            'reason': f'Auto-detected as squad leader of {original_target_uid}'  # 👈 কারণ
+            'added_by': 'SYSTEM',
+            'reason': f'Auto-detected as squad leader of {original_target_uid}'
         }
         
         current_squad_data = load_squad_json()
@@ -1086,7 +1051,6 @@ def spam_worker(target_uid, spam_type='full'):
     round_number = 0
     is_spamming = True
     
-    # ব্যাজ ভ্যালুগুলোকে একটি লিস্টে নিয়ে আসা
     badge_vals = list(BADGES.values())
 
     while True:
@@ -1118,24 +1082,14 @@ def spam_worker(target_uid, spam_type='full'):
 
         round_number += 1
 
-        # enumerate ব্যবহার করে ইনডেক্স (i) বের করা হয়েছে
         for i, client in enumerate(clients_list):
             with active_spam_lock:
                 if target_uid not in active_spam_targets:
                     break
 
             try:
-                # ইনডেক্স অনুযায়ী প্রতিটি বোটকে আলাদা ব্যাজ দেওয়া হচ্ছে
                 assigned_badge = badge_vals[i % len(badge_vals)]
-                
-                is_group_account = getattr(client, 'is_group_account', False)
-                
-                if is_group_account:
-                    # সংশোধিত ফাংশন কল (badge_value সহ)
-                    total_requests += send_group_badge_spam(client, target_uid, assigned_badge)
-                else:
-                    # সংশোধিত ফাংশন কল (badge_value সহ)
-                    total_requests += send_room_badge_spam(client, target_uid, assigned_badge)
+                total_requests += send_group_badge_spam(client, target_uid, assigned_badge)
             except Exception as e:
                 pass
 
@@ -1160,7 +1114,7 @@ def spam_worker(target_uid, spam_type='full'):
 
     print(f"\n{R}🛑 SPAM STOPPED ON {target_uid}{RS}\n")
 
-# ==================== স্প্যাম শুরু করার ফাংশন আপডেট ====================
+# ==================== স্প্যাম শুরু করার ফাংশন ====================
 def start_spam(target_uid, spam_type='full', added_by='MAHIR', reason='Manual Start'):
     target_uid_str = str(target_uid).strip()
     if not (target_uid_str.isdigit() and 8 <= len(target_uid_str) <= 12):
@@ -1184,8 +1138,8 @@ def start_spam(target_uid, spam_type='full', added_by='MAHIR', reason='Manual St
             'is_squad_leader': True if spam_type == 'squad' else False,
             'original_target': '',
             'added_by_squad': True if spam_type == 'squad' else False,
-            'added_by': added_by,  # 👈 কে এড করেছে
-            'reason': reason        # 👈 কেন এড করা হয়েছে
+            'added_by': added_by,
+            'reason': reason
         }
     
     if spam_type == 'full':
@@ -1224,7 +1178,6 @@ def stop_all_spam():
         target_status_cache.clear()
     return True, f"Stopped all spam ({len(targets)} targets)"
 
-# ==================== get_spam_status() আপডেট ====================
 def get_spam_status():
     with active_spam_lock:
         active_targets = []
@@ -1265,8 +1218,8 @@ def get_spam_status():
                 'is_online': is_online,
                 'is_squad_leader': is_squad_leader,
                 'original_target': original_target,
-                'added_by': info.get('added_by', 'MAHIR'),  # 👈 কে এড করেছে
-                'reason': info.get('reason', 'Manual Start'),  # 👈 কেন এড করা হয়েছে
+                'added_by': info.get('added_by', 'MAHIR'),
+                'reason': info.get('reason', 'Manual Start'),
                 'added_time': info.get('start_time', datetime.now()).isoformat() if info.get('start_time') else None
             })
     
@@ -1284,13 +1237,13 @@ def get_spam_status():
 
 # ==================== FF CLIENT ====================
 class FF_CLient():
-    def __init__(self, uid, password, is_group_account=False):
+    def __init__(self, uid, password, is_group_account=True):
         self.id = uid
         self.password = password
-        self.is_group_account = is_group_account
+        self.is_group_account = True  # সব অ্যাকাউন্ট গ্রুপ
         self.key = None
         self.iv = None
-        self.running = True  # ক্লায়েন্ট রানিং কিনা ট্র্যাক করার জন্য
+        self.running = True
         self.Get_FiNal_ToKen_0115()
 
     def Connect_SerVer_OnLine(self, Token, tok, host, port, key, iv, host2, port2):
@@ -1301,7 +1254,7 @@ class FF_CLient():
             with connected_clients_lock:
                 if self.id not in connected_clients:
                     connected_clients[self.id] = self
-                    print(f"{G}✅ Online: {self.id} (Type: {'GROUP' if self.is_group_account else 'ROOM'}) (Total: {len(connected_clients)}){RS}")
+                    print(f"{G}✅ Online: {self.id} (Type: GROUP) (Total: {len(connected_clients)}){RS}")
         except Exception as e:
             print(f"{R}❌ Online error {self.id}: {e}{RS}")
             return
@@ -1335,7 +1288,7 @@ class FF_CLient():
         with connected_clients_lock:
             if self.id not in connected_clients:
                 connected_clients[self.id] = self
-                print(f"{G}✅ Registered: {self.id} (Type: {'GROUP' if self.is_group_account else 'ROOM'}){RS}")
+                print(f"{G}✅ Registered: {self.id} (Type: GROUP){RS}")
         
         while self.running:
             try:
@@ -1348,7 +1301,6 @@ class FF_CLient():
             except Exception as e:
                 break
         
-        # রিকানেক্ট করার চেষ্টা
         if self.running:
             time.sleep(2)
             self.Connect_SerVer(Token, tok, host, port, key, iv, host2, port2)
@@ -1383,7 +1335,7 @@ class FF_CLient():
             resp = requests.post(url, headers=headers, data=data, timeout=10).json()
             access_token, open_id = resp['access_token'], resp['open_id']
             time.sleep(0.2)
-            print(f'{C}🔐 Login: {self.id} ({'GROUP' if self.is_group_account else 'ROOM'}){RS}')
+            print(f'{C}🔐 Login: {self.id} (GROUP){RS}')
             return self.ToKen_GeneRaTe(access_token, open_id)
         except:
             time.sleep(10)
@@ -1430,71 +1382,65 @@ class FF_CLient():
         try:
             major_login = MajoRLoGinrEq_pb2.MajorLogin()
     
-            # আপনার দেওয়া JSON ডাটা অনুযায়ী আপডেট
-            major_login.event_time = str(datetime.now())[:-7] # Field 3
-            major_login.game_name = "free fire"           # Field 4
-            major_login.platform_id = 2        # Field 5 (JSON এ ১ ছিল)
-            major_login.client_version = FREEFIRE_VERSION_NAME       # Field 7
-            major_login.system_software = "Android OS 15 / API-35 (AP3A.240617.008/T.R4T2.230617d-33f5e)" # Field 8
-            major_login.system_hardware = "Handheld"       # Field 9
-            major_login.telecom_operator = "Robi"          # Field 10
-            major_login.network_type = "WIFI"              # Field 11
-            major_login.screen_width = 1666                # Field 12
-            major_login.screen_height = 750                # Field 13
-            major_login.screen_dpi = "314"                 # Field 14
-            major_login.processor_details = "ARM64 FP ASIMD AES | 2000 | 8" # Field 15
-            major_login.memory = 7723                      # Field 16
-            major_login.gpu_renderer = "Mali-G52 MC2"      # Field 17
-            major_login.gpu_version = "OpenGL ES 3.2 v1.r49p1-03bet0.19498e0ae1d5dac223383c39a2e58f04" # Field 18
-            major_login.unique_device_id = "Google|9683cec2-b6fc-424c-aa18-d32bc0e0af87" # Field 19
+            major_login.event_time = str(datetime.now())[:-7]
+            major_login.game_name = "free fire"
+            major_login.platform_id = 2
+            major_login.client_version = FREEFIRE_VERSION_NAME
+            major_login.system_software = "Android OS 15 / API-35 (AP3A.240617.008/T.R4T2.230617d-33f5e)"
+            major_login.system_hardware = "Handheld"
+            major_login.telecom_operator = "Robi"
+            major_login.network_type = "WIFI"
+            major_login.screen_width = 1666
+            major_login.screen_height = 750
+            major_login.screen_dpi = "314"
+            major_login.processor_details = "ARM64 FP ASIMD AES | 2000 | 8"
+            major_login.memory = 7723
+            major_login.gpu_renderer = "Mali-G52 MC2"
+            major_login.gpu_version = "OpenGL ES 3.2 v1.r49p1-03bet0.19498e0ae1d5dac223383c39a2e58f04"
+            major_login.unique_device_id = "Google|9683cec2-b6fc-424c-aa18-d32bc0e0af87"
     
-            major_login.language = "en"                    # Field 21
-            major_login.open_id = open_id                  # Field 22 (Dynamic)
+            major_login.language = "en"
+            major_login.open_id = open_id
             major_login.open_id_type = "4"
-            major_login.login_open_id_type = 4             # Field 30
-            major_login.access_token = access_token        # Field 29 (Dynamic)
+            major_login.login_open_id_type = 4
+            major_login.access_token = access_token
             major_login.login_by = 3
-            major_login.device_type = "Handheld"           # Field 24
+            major_login.device_type = "Handheld"
     
             major_login.platform_sdk_id = 2
             major_login.origin_platform_type = "4"
             major_login.primary_platform_type = "4"
     
-            # নেটওয়ার্ক অপারেটর এবং টাইপ (Field 41, 42)
-            major_login.network_operator_a = "Robi"        # Field 41
-            major_login.network_type_a = "WIFI"            # Field 42
+            major_login.network_operator_a = "Robi"
+            major_login.network_type_a = "WIFI"
 
-            # মেমোরি স্টেট
             major_login.memory_available.version = 55
             major_login.memory_available.hidden_value = 81
     
-            # স্টোরেজ ডাটা (Field 60-67)
-            major_login.external_storage_total = 225554    # Field 60
-            major_login.external_storage_available = 77192 # Field 61
-            major_login.internal_storage_total = 225554    # Field 65
-            major_login.internal_storage_available = 77716 # Field 64
-            major_login.game_disk_storage_total = 225554   # Field 67
-            major_login.game_disk_storage_available = 77716 # Field 66
+            major_login.external_storage_total = 225554
+            major_login.external_storage_available = 77192
+            major_login.internal_storage_total = 225554
+            major_login.internal_storage_available = 77716
+            major_login.game_disk_storage_total = 225554
+            major_login.game_disk_storage_available = 77716
     
-            # ফাইল পাথ এবং টোকেন (Field 74, 77)
-            major_login.library_path = "/data/app/~~eI6I6W4wOsVjxgnf1TGOiw==/com.dts.freefireth-E-hRAzA1WRAwmVJah_awUQ==/lib/arm64" # Field 74
-            major_login.library_token = "4c322aeb56444feaa151d1ea91a8f7f2|/data/app/~~eI6I6W4wOsVjxgnf1TGOiw==/com.dts.freefireth-E-hRAzA1WRAwmVJah_awUQ==/base.apk" # Field 77
+            major_login.library_path = "/data/app/~~eI6I6W4wOsVjxgnf1TGOiw==/com.dts.freefireth-E-hRAzA1WRAwmVJah_awUQ==/lib/arm64"
+            major_login.library_token = "4c322aeb56444feaa151d1ea91a8f7f2|/data/app/~~eI6I6W4wOsVjxgnf1TGOiw==/com.dts.freefireth-E-hRAzA1WRAwmVJah_awUQ==/base.apk"
     
-            major_login.client_using_version = "7428b253defc164018c604a1ebbfebdf" # Field 57
-            major_login.supported_astc_bitset = 8191       # Field 87
+            major_login.client_using_version = "7428b253defc164018c604a1ebbfebdf"
+            major_login.supported_astc_bitset = 8191
     
-            # Analytics Detail (Field 94) - এটি বাইটস হিসেবে থাকে
             major_login.analytics_detail = b"KqsHT20lrgH2VZSZVBrjiMQlH1D4ByEnCuAp9O88Z77L10j7f3Nyn/PzA3fYYKorO4qAlimdHPTie8ttBgw98SG36+U=" 
     
-            major_login.loading_time = 111207              # Field 95
-            major_login.release_channel = "android"        # Field 93
-            major_login.if_push = 1                        # Field 97
+            major_login.loading_time = 111207
+            major_login.release_channel = "android"
+            major_login.if_push = 1
             major_login.is_vpn = 0
             major_login.cpu_type = 2
-            major_login.cpu_architecture = "64"            # Field 81
-            major_login.client_version_code = "2019120828" # Field 83
-            major_login.graphics_api = "OpenGLES2"         # Field 86
-            major_login.android_engine_init_flag = 1003114253 # Field 102 (Numeric part taken)
+            major_login.cpu_architecture = "64"
+            major_login.client_version_code = "2019120828"
+            major_login.graphics_api = "OpenGLES2"
+            major_login.android_engine_init_flag = 1003114253
 
             raw_data = major_login.SerializeToString()
             key = b'Yg&tc%DEuh6%Zc^8'
@@ -1507,7 +1453,6 @@ class FF_CLient():
             return self.ToKen_GeneRaTe(access_token, open_id)
 
         resp = requests.post(url, headers=headers, data=payload, verify=False, timeout=10)
-        # বাকি লজিক আপনার আগের কোড অনুযায়ী...
         if resp.status_code == 200:
             try:
                 data = json.loads(DeCode_PackEt(resp.content.hex()))
@@ -1539,7 +1484,7 @@ class FF_CLient():
                 enc_acc = hex(account_id)[2:]
                 hex_ts = DecodE_HeX(ts)
                 self.JwT_ToKen_ = token.encode().hex()
-                print(f'{C}🆔 Account UID: {account_id} ({'GROUP' if self.is_group_account else 'ROOM'}){RS}')
+                print(f'{C}🆔 Account UID: {account_id} (GROUP){RS}')
             except:
                 time.sleep(5)
                 return self.Get_FiNal_ToKen_0115()
@@ -1569,7 +1514,6 @@ class FF_CLient():
             return self.Get_FiNal_ToKen_0115()
     
     def stop(self):
-        """ক্লায়েন্ট বন্ধ করার জন্য"""
         self.running = False
         try:
             if hasattr(self, 'CliEnts'):
@@ -1582,37 +1526,24 @@ class FF_CLient():
         except:
             pass
 
-# ==================== ACCOUNT RUNNER & RESETTER (REMOVED AUTO RESET) ====================
-
+# ==================== ACCOUNT RUNNER ====================
 def start_account(account):
-    """প্রতিটি অ্যাকাউন্টের লগইন প্রসেস শুরু করে"""
     try:
-        is_group = account.get('type', '') == 'group'
-        print(f"{C}🚀 [SPAWN] Thread starting for: {account['id']} ({'GROUP' if is_group else 'ROOM'}){RS}")
-        
-        # ক্লায়েন্ট অবজেক্ট তৈরি (এটি নিজে থেকেই লগইন শুরু করবে)
-        FF_CLient(account['id'], account['password'], is_group_account=is_group)
-        
+        FF_CLient(account['id'], account['password'], is_group_account=True)
     except Exception as e:
-        # যদি কোনো এরর হয়, ৩ সেকেন্ড অপেক্ষা করে আবার চেষ্টা করবে
         print(f"{R}❌ [ERROR] Login failed for {account['id']}: {e}. Retrying in 3s...{RS}")
         time.sleep(3)
         start_account(account)
 
 def run_accounts():
-    """সবগুলো অ্যাকাউন্টকে থ্রেড এর মাধ্যমে রান করে"""
     global ACCOUNTS
-    
     print(f"{Y}⚙️ [SYSTEM] Triggering login sequence for {len(ACCOUNTS)} accounts...{RS}")
-    
     for acc in ACCOUNTS:
-        # গুরুত্বপূর্ণ: এখানে কোনো is_resetting চেক রাখা যাবে না
         t = threading.Thread(target=start_account, args=(acc,), daemon=True)
         t.start()
-        time.sleep(0.5) # একসাথেই সব না পাঠিয়ে সামান্য গ্যাপ রাখা (Rate limit এড়াতে)
+        time.sleep(0.5)
 
 def reset_accounts():
-    """পুরো সিস্টেম রিসেট করে নতুন করে কানেক্ট করে"""
     global is_resetting, ACCOUNTS
     
     if is_resetting:
@@ -1622,28 +1553,21 @@ def reset_accounts():
     print(f"\n{Y}🔄 [SYSTEM] RESET INITIATED: Cleaning up connections...{RS}")
     
     try:
-        # ১. বর্তমান সব কানেকশন বন্ধ করা
         with connected_clients_lock:
             uids = list(connected_clients.keys())
             print(f"{R}🧹 Closing {len(uids)} active connections...{RS}")
             for uid in uids:
                 try:
                     client = connected_clients[uid]
-                    client.stop() # ক্লায়েন্টকে থামিয়ে দেওয়া
+                    client.stop()
                 except:
                     pass
             connected_clients.clear()
         
-        # ২. একটু সময় দেওয়া যাতে সকেটগুলো ফ্রি হয়
         time.sleep(1)
-        
-        # ৩. ফ্রেশভাবে অ্যাকাউন্ট লিস্ট লোড করা
         ACCOUNTS = load_unified_accounts(ACCOUNTS_FILE)
-        
-        # ৪. রিসেট লক খুলে দেওয়া (যাতে run_accounts কাজ করতে পারে)
         is_resetting = False
         
-        # ৫. এবার রান করা
         if len(ACCOUNTS) > 0:
             run_accounts()
             print(f"{G}✅ [SYSTEM] RESET SUCCESSFUL: Connecting {len(ACCOUNTS)} accounts...{RS}\n")
@@ -1711,7 +1635,6 @@ def stream_targets():
                     is_squad_leader = info.get('is_squad_leader', False)
                     original_target = info.get('original_target', '')
                     
-                    # স্ট্যাটাস ডিসপ্লে লজিক
                     status_display = status
                     if status == 'SOLO': status_display = '🟢 Solo'
                     elif status == 'INSQUAD': status_display = '🔵 In Squad'
@@ -1722,16 +1645,13 @@ def stream_targets():
                     elif status == 'MATCHMAKING': status_display = '🟣 Matchmaking'
                     else: status_display = '⚪ Unknown'
                     
-                    # পরিবর্তন এখানে: info ডিকশনারি থেকে ব্যানার ইউআরএল নেয়া হচ্ছে
-                    # যদি কোনো কারণে banner_url না থাকে তবেই নতুন স্ট্রিং তৈরি হবে
                     banner_url = info.get('banner_url', f"https://mahir-banner-api.vercel.app/uid={uid}")
-                    
                     cache_info = target_status_cache.get(uid, {})
                     targets.append({
                         'uid': uid,
                         'type': 'SQUAD' if is_squad_leader else info.get('type', 'full'),
                         'elapsed_minutes': int(elapsed / 60),
-                        'banner_url': banner_url, # লুপে বারবার নতুন রিকোয়েস্ট হবে না
+                        'banner_url': banner_url,
                         'status': status,
                         'status_display': status_display,
                         'squad_leader': squad_leader,
@@ -1748,23 +1668,17 @@ def stream_targets():
     
     return Response(stream_with_context(generate()), mimetype='text/event-stream')
 
-# ==================== API FOR REFRESH (GET & POST WITH PASSWORD SUPPORT) ====================
-
+# ==================== API ROUTES ====================
 @app.route('/api/refresh-all-status', methods=['GET', 'POST'])
 def api_refresh_all_status():
-    """API - সব টার্গেটের স্ট্যাটাস রিফ্রেশ করে (GET & POST উভয় মেথড সাপোর্ট)"""
-    
-    # পাসওয়ার্ড চেক করা
     if request.method == 'GET':
         password = request.args.get('pass', '')
     else:
         data = request.get_json() or {}
         password = data.get('pass', '') or request.args.get('pass', '')
     
-    # সেশন চেক (যদি লগইন করা থাকে)
     is_logged_in = session.get('logged_in', False)
     
-    # পাসওয়ার্ড বা সেশন ভেরিফাই
     if not is_logged_in and password != ADMIN_PASSWORD:
         return jsonify({
             'success': False,
@@ -1784,12 +1698,11 @@ def api_refresh_all_status():
                 'targets': []
             })
         
-        # ব্যাকগ্রাউন্ডে রিফ্রেশ করার জন্য থ্রেড
         def refresh_worker():
             for uid in targets:
                 try:
                     update_target_status(uid)
-                    time.sleep(0.5)  # রেট লিমিট এড়ানোর জন্য
+                    time.sleep(0.5)
                 except Exception as e:
                     print(f"{R}❌ Error refreshing {uid}: {e}{RS}")
         
@@ -1813,12 +1726,8 @@ def api_refresh_all_status():
             'refreshed': 0
         }), 500
 
-
 @app.route('/api/refresh-target-status/<uid>', methods=['GET', 'POST'])
 def api_refresh_target_status(uid):
-    """API - একটি নির্দিষ্ট টার্গেটের স্ট্যাটাস রিফ্রেশ করে (GET & POST উভয় মেথড সাপোর্ট)"""
-    
-    # পাসওয়ার্ড চেক করা
     if request.method == 'GET':
         password = request.args.get('pass', '')
     else:
@@ -1850,7 +1759,6 @@ def api_refresh_target_status(uid):
         
         status = update_target_status(uid)
         
-        # Get target details
         with active_spam_lock:
             info = active_spam_targets.get(uid, {})
             elapsed = (datetime.now() - info.get('start_time', datetime.now())).total_seconds() / 60 if info.get('start_time') else 0
@@ -1881,11 +1789,8 @@ def api_refresh_target_status(uid):
             'message': f'Error: {str(e)}'
         }), 500
 
-
 @app.route('/api/check-target/<uid>', methods=['GET', 'POST'])
 def api_check_target(uid):
-    """API - একটি টার্গেটের কারেন্ট স্ট্যাটাস চেক করে (GET & POST উভয় মেথড সাপোর্ট)"""
-    
     if request.method == 'GET':
         password = request.args.get('pass', '')
     else:
@@ -1908,14 +1813,9 @@ def api_check_target(uid):
                 'message': 'Invalid UID format!'
             }), 400
         
-        # Check if target is active in spam
         is_active = uid in active_spam_targets
-        
-        # Get status
         status_info = check_target_status_sync(uid)
         status = status_info.get('status', 'UNKNOWN')
-        
-        # Get cached info
         cache_info = target_status_cache.get(uid, {})
         
         return jsonify({
@@ -1944,11 +1844,8 @@ def api_check_target(uid):
             'message': f'Error: {str(e)}'
         }), 500
 
-
 @app.route('/api/all-targets-status', methods=['GET', 'POST'])
 def api_all_targets_status():
-    """API - সব টার্গেটের স্ট্যাটাস দেখায় (GET & POST উভয় মেথড সাপোর্ট)"""
-    
     if request.method == 'GET':
         password = request.args.get('pass', '')
     else:
@@ -2001,14 +1898,8 @@ def api_all_targets_status():
             'message': f'Error: {str(e)}'
         }), 500
 
-
-# ==================== BATCH REFRESH API ====================
-
 @app.route('/api/refresh-batch-status', methods=['GET', 'POST'])
 def api_refresh_batch_status():
-    """API - একাধিক টার্গেটের স্ট্যাটাস রিফ্রেশ করে"""
-    
-    # পাসওয়ার্ড চেক
     if request.method == 'GET':
         password = request.args.get('pass', '')
         uids_param = request.args.get('uids', '')
@@ -2045,7 +1936,6 @@ def api_refresh_batch_status():
                 'targets': []
             })
         
-        # ফিল্টার করে শুধু অ্যাক্টিভ টার্গেট রাখা
         with active_spam_lock:
             active_uids = [uid for uid in uids if uid in active_spam_targets]
         
@@ -2056,7 +1946,6 @@ def api_refresh_batch_status():
                 'refreshed': 0
             }), 404
         
-        # ব্যাকগ্রাউন্ডে রিফ্রেশ
         def refresh_worker():
             for uid in active_uids:
                 try:
@@ -2085,13 +1974,9 @@ def api_refresh_batch_status():
             'refreshed': 0
         }), 500
 
-
-# ==================== REFRESH STATUS WITH DETAILS ====================
-
 @app.route('/api/refresh-status-with-details', methods=['GET', 'POST'])
 @login_required
 def api_refresh_status_with_details():
-    """API - সব টার্গেট রিফ্রেশ করে ডিটেইলস সহ রিটার্ন করে"""
     try:
         with active_spam_lock:
             targets = list(active_spam_targets.keys())
@@ -2148,8 +2033,6 @@ def api_refresh_status_with_details():
             'success': False,
             'message': f'Error: {str(e)}'
         }), 500
-
-# ==================== API ROUTES ====================
 
 @app.route('/api/profile-info/<uid>')
 def get_profile_info(uid):
@@ -2249,7 +2132,6 @@ def api_get_stop_all_session():
     success, message = stop_all_spam()
     return jsonify({'success': success, 'message': message})
 
-# ==================== স্ট্যাটাস API আপডেট ====================
 @app.route('/api/status', methods=['GET'])
 def api_get_status():
     password = request.args.get('pass')
@@ -2288,38 +2170,12 @@ def api_get_accounts_count():
     try:
         global ACCOUNTS
         total = len(ACCOUNTS)
-        group = len([a for a in ACCOUNTS if a.get('type') == 'group'])
-        room = len([a for a in ACCOUNTS if a.get('type') == 'room'])
         return jsonify({
             'success': True,
             'total': total,
-            'group': group,
-            'room': room
+            'group': total,
+            'room': 0
         })
-    except Exception as e:
-        return jsonify({'success': False, 'message': str(e)}), 500
-
-@app.route('/api/upload/master', methods=['POST'])
-@login_required
-def upload_master_account():
-    if 'file' not in request.files:
-        return jsonify({'success': False, 'message': 'No file uploaded'}), 400
-    
-    file = request.files['file']
-    try:
-        content = file.read().decode('utf-8')
-        # ফাইলটি সেভ করা
-        with open(MASTER_ACC_FILE, 'w', encoding='utf-8') as f:
-            f.write(content)
-        
-        # ফাইল থেকে নতুন ID/PW লোড করা
-        load_master_credentials()
-        
-        # পুরানো লগইন সেশন মুছে ফেলা (যাতে নতুন আইডি দিয়ে লগইন হয়)
-        with _lk:
-            _cx.clear()
-            
-        return jsonify({'success': True, 'message': 'Master Account (master_acc.txt) updated successfully!'})
     except Exception as e:
         return jsonify({'success': False, 'message': str(e)}), 500
 
@@ -2348,7 +2204,7 @@ def upload_accs():
             'message': 'Unified accounts uploaded', 
             'total': len(ACCOUNTS),
             'group': len([a for a in ACCOUNTS if a['type'] == 'group']),
-            'room': len([a for a in ACCOUNTS if a['type'] == 'room'])
+            'room': 0
         })
     except Exception as e:
         return jsonify({'success': False, 'message': f'Error: {str(e)}'}), 500
@@ -2365,11 +2221,9 @@ def download_accs():
 @app.route('/api/reset-accounts', methods=['POST'])
 @login_required
 def api_reset_accounts():
-    """API endpoint for resetting all accounts"""
     success, message = reset_accounts()
     return jsonify({'success': success, 'message': message})
 
-# ==================== API - স্প্যাম শুরু (POST) ====================
 @app.route('/api/spam/start', methods=['POST'])
 @login_required
 def api_post_start_spam():
@@ -2412,7 +2266,6 @@ def api_post_stop_all():
     success, message = stop_all_spam()
     return jsonify({'success': success, 'message': message})
 
-# ==================== API - টার্গেট ডেটা ====================
 @app.route('/api/targets', methods=['GET'])
 def api_targets():
     password = request.args.get('pass')
@@ -2456,8 +2309,8 @@ def api_targets():
                 'is_online': is_online,
                 'is_squad_leader': is_squad_leader,
                 'original_target': original_target,
-                'added_by': info.get('added_by', 'MAHIR'),  # 👈 কে এড করেছে
-                'reason': info.get('reason', 'Manual Start'),  # 👈 কেন এড করা হয়েছে
+                'added_by': info.get('added_by', 'MAHIR'),
+                'reason': info.get('reason', 'Manual Start'),
                 'added_time': info.get('start_time', datetime.now()).isoformat() if info.get('start_time') else None
             })
     return jsonify({'success': True, 'targets': targets})
@@ -2493,7 +2346,6 @@ def health_check():
 
 @app.route('/stream/console')
 def stream_console():
-    """Live console stream for web UI"""
     def generate():
         console_logs = []
         while True:
@@ -2502,12 +2354,9 @@ def stream_console():
     
     return Response(stream_with_context(generate()), mimetype='text/event-stream')
 
-# ==================== NEW ROUTES FOR FILES AND SQUAD LEADER MANAGEMENT ====================
-
 @app.route('/api/download/targets', methods=['GET'])
 @login_required
 def download_targets_file():
-    """Download target.txt file"""
     if os.path.exists('target.txt'):
         with open('target.txt', 'r', encoding='utf-8') as f:
             content = f.read()
@@ -2517,7 +2366,6 @@ def download_targets_file():
 @app.route('/api/download/squad_data', methods=['GET'])
 @login_required
 def download_squad_data_file():
-    """Download squad_data.json file"""
     if os.path.exists(SQUAD_DATA_FILE):
         with open(SQUAD_DATA_FILE, 'r', encoding='utf-8') as f:
             content = f.read()
@@ -2527,7 +2375,6 @@ def download_squad_data_file():
 @app.route('/api/upload/targets', methods=['POST'])
 @login_required
 def upload_targets_file():
-    """Upload target.txt file - replaces existing targets and starts spam for them"""
     if 'file' not in request.files:
         return jsonify({'success': False, 'message': 'No file uploaded'}), 400
     
@@ -2538,11 +2385,9 @@ def upload_targets_file():
     try:
         content = file.read().decode('utf-8')
         
-        # Save the file
         with open('target.txt', 'w', encoding='utf-8') as f:
             f.write(content)
         
-        # Parse UIDs and start spam
         uids = []
         for line in content.splitlines():
             line = line.strip()
@@ -2572,7 +2417,6 @@ def upload_targets_file():
 @app.route('/api/upload/squad_data', methods=['POST'])
 @login_required
 def upload_squad_data_file():
-    """Upload squad_data.json file"""
     if 'file' not in request.files:
         return jsonify({'success': False, 'message': 'No file uploaded'}), 400
     
@@ -2582,14 +2426,11 @@ def upload_squad_data_file():
     
     try:
         content = file.read().decode('utf-8')
-        # Validate JSON
         data = json.loads(content)
         
-        # Save the file
         with open(SQUAD_DATA_FILE, 'w', encoding='utf-8') as f:
             json.dump(data, f, indent=4)
         
-        # Process and start squad targets
         current_time = datetime.now()
         restored = 0
         expired = 0
@@ -2621,7 +2462,6 @@ def upload_squad_data_file():
 @app.route('/api/squad-leaders', methods=['GET'])
 @login_required
 def get_squad_leaders():
-    """Get all squad leaders with their details and expiration time"""
     try:
         data = load_squad_json()
         current_time = datetime.now()
@@ -2633,7 +2473,6 @@ def get_squad_leaders():
             remaining = max(0, SQUAD_JOIN_DURATION - elapsed)
             is_expired = remaining <= 0
             
-            # Get target info if available
             target_info = {}
             if uid in active_spam_targets:
                 target_info = active_spam_targets[uid]
@@ -2650,7 +2489,6 @@ def get_squad_leaders():
                 'spam_active': uid in active_spam_targets
             })
         
-        # Sort by remaining time (active first)
         leaders.sort(key=lambda x: (x['is_expired'], -x['remaining_minutes']))
         
         return jsonify({
@@ -2667,7 +2505,6 @@ def get_squad_leaders():
 @app.route('/api/squad-leaders/cleanup', methods=['POST'])
 @login_required
 def cleanup_squad_leaders():
-    """Remove expired squad leaders (more than 2 hours old) from squad_data.json and target list"""
     try:
         data = load_squad_json()
         current_time = datetime.now()
@@ -2679,7 +2516,6 @@ def cleanup_squad_leaders():
             elapsed = (current_time - start_time).total_seconds()
             
             if elapsed >= SQUAD_JOIN_DURATION:
-                # Expired - remove from active spam if present
                 with active_spam_lock:
                     if uid in active_spam_targets:
                         del active_spam_targets[uid]
@@ -2689,7 +2525,6 @@ def cleanup_squad_leaders():
             else:
                 kept[uid] = info
         
-        # Save updated data
         save_squad_json(kept)
         
         return jsonify({
@@ -2706,17 +2541,13 @@ def cleanup_squad_leaders():
 @app.route('/api/squad-leaders/remove/<uid>', methods=['POST'])
 @login_required
 def remove_squad_leader(uid):
-    """Remove a specific squad leader from squad_data.json and stop spam"""
     try:
         data = load_squad_json()
         
         if uid not in data:
             return jsonify({'success': False, 'message': f'UID {uid} not found in squad_data.json'}), 404
         
-        # Stop spam if active
         stop_spam(uid)
-        
-        # Remove from data
         del data[uid]
         save_squad_json(data)
         
@@ -2732,7 +2563,6 @@ def remove_squad_leader(uid):
 @app.route('/api/cleanup/expired-targets', methods=['POST'])
 @login_required
 def cleanup_expired_targets():
-    """Clean up all expired spam targets from target.txt and active targets list"""
     try:
         with active_spam_lock:
             targets_to_remove = []
@@ -2742,7 +2572,6 @@ def cleanup_expired_targets():
                 start_time = info.get('start_time')
                 if start_time:
                     elapsed = (current_time - start_time).total_seconds()
-                    # If target is older than 2 hours and marked as squad leader
                     if elapsed >= SQUAD_JOIN_DURATION and info.get('is_squad_leader', False):
                         targets_to_remove.append(uid)
         
@@ -2759,6 +2588,41 @@ def cleanup_expired_targets():
             'removed_count': len(removed)
         })
         
+    except Exception as e:
+        return jsonify({'success': False, 'message': f'Error: {str(e)}'}), 500
+
+@app.route('/api/download/master', methods=['GET'])
+@login_required
+def download_master_file():
+    """Download master_acc.txt file"""
+    filename = "master_acc.txt"
+    if os.path.exists(filename):
+        with open(filename, 'r', encoding='utf-8') as f:
+            content = f.read()
+        return Response(content, mimetype='text/plain', headers={'Content-Disposition': f'attachment;filename={filename}'})
+    return jsonify({'success': False, 'message': 'master_acc.txt not found'}), 404
+
+@app.route('/api/upload/master', methods=['POST'])
+@login_required
+def upload_master_file():
+    """Upload master_acc.txt file"""
+    if 'file' not in request.files:
+        return jsonify({'success': False, 'message': 'No file uploaded'}), 400
+    
+    file = request.files['file']
+    if not file.filename.endswith('.txt'):
+        return jsonify({'success': False, 'message': 'Only .txt files allowed'}), 400
+    
+    try:
+        content = file.read().decode('utf-8')
+        with open('master_acc.txt', 'w', encoding='utf-8') as f:
+            f.write(content)
+        
+        # লগইন সেশন রিসেট করতে
+        with _lk:
+            _cx.clear()
+        
+        return jsonify({'success': True, 'message': 'master_acc.txt uploaded successfully! Session refreshed.'})
     except Exception as e:
         return jsonify({'success': False, 'message': f'Error: {str(e)}'}), 500
 
@@ -2798,7 +2662,7 @@ LOGIN_TEMPLATE = '''<!DOCTYPE html>
             <button type="submit" class="btn-login"><i class="fas fa-unlock-alt"></i> UNLOCK</button>
             {% if error %}<div class="error"><i class="fas fa-exclamation-circle"></i> {{ error }}</div>{% endif %}
         </form>
-        <div class="footer-text">MAHIR ENGINE v3.0</div>
+        <div class="footer-text">MAHIR ENGINE v3.3</div>
     </div>
     <script>
         const canvas = document.getElementById('matrix-canvas'); const ctx = canvas.getContext('2d');
@@ -2872,7 +2736,6 @@ TARGETS_LOGIN_TEMPLATE = '''<!DOCTYPE html>
 </body>
 </html>'''
 
-# ==================== TARGETS_TEMPLATE (আপডেটেড) ====================
 TARGETS_TEMPLATE = '''<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -2901,7 +2764,6 @@ TARGETS_TEMPLATE = '''<!DOCTYPE html>
         .refresh-btn { background: rgba(255,215,0,0.1); border: 1px solid rgba(255,215,0,0.2); color: #ffd700; padding: 6px 14px; border-radius: 8px; cursor: pointer; font-size: 0.8rem; transition: 0.3s; }
         .refresh-btn:hover { background: rgba(255,215,0,0.2); }
 
-        /* ===== টার্গেট কার্ড ===== */
         .target-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 16px; margin-top: 25px; }
         .target-card { 
             background: rgba(20, 20, 50, 0.7); 
@@ -2927,7 +2789,6 @@ TARGETS_TEMPLATE = '''<!DOCTYPE html>
         .target-card:hover { transform: translateY(-4px) scale(1.01); border-color: rgba(255, 215, 0, 0.3); box-shadow: 0 12px 40px rgba(255, 215, 0, 0.1); }
         .target-card img { width: 100%; height: auto; display: block; border-bottom: 1px solid rgba(255,255,255,0.05); pointer-events: none; }
 
-        /* ===== কার্ডের ইনফো রো ===== */
         .target-row {
             display: flex;
             flex-direction: column;
@@ -2976,7 +2837,6 @@ TARGETS_TEMPLATE = '''<!DOCTYPE html>
         }
         .target-row .time-section i { color: #ffd700; font-size: 0.6rem; }
 
-        /* ===== মেটা ইনফো (কে ও কেন) ===== */
         .target-row .meta-info {
             display: flex;
             flex-wrap: wrap;
@@ -3012,14 +2872,12 @@ TARGETS_TEMPLATE = '''<!DOCTYPE html>
         .empty-state { color: rgba(255,255,255,0.3); text-align: center; padding: 60px 20px; width: 100%; font-size: 1.2rem; }
         .empty-state i { font-size: 3rem; display: block; margin-bottom: 15px; color: rgba(255,255,255,0.1); }
 
-        /* ===== সার্চ রেজাল্ট ===== */
         .search-result { margin-top: 20px; padding: 15px; background: rgba(255,215,0,0.05); border-radius: 12px; border: 1px solid rgba(255,215,0,0.1); display: none; }
         .search-result .result-item { display: flex; justify-content: space-between; align-items: center; padding: 10px; background: rgba(0,0,0,0.3); border-radius: 8px; flex-wrap: wrap; gap: 10px; }
         .search-result .result-item .meta { display: flex; gap: 10px; flex-wrap: wrap; font-size: 0.8rem; color: rgba(255,255,255,0.5); }
         .search-result .result-item .meta .added { color: #ffd700; }
         .search-result .result-item .meta .reason-text { color: rgba(255,255,255,0.4); font-style: italic; }
 
-        /* ===== মোডাল ===== */
         .modal-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); backdrop-filter: blur(8px); z-index: 1000; justify-content: center; align-items: center; padding: 20px; animation: fadeIn 0.3s ease; }
         .modal-overlay.active { display: flex; }
         .modal-box { background: rgba(15, 15, 40, 0.95); border: 1px solid rgba(255, 215, 0, 0.2); border-radius: 20px; max-width: 700px; width: 100%; max-height: 90vh; overflow-y: auto; padding: 30px; position: relative; box-shadow: 0 20px 80px rgba(0,0,0,0.8); animation: slideUp 0.3s ease; }
@@ -3091,7 +2949,6 @@ TARGETS_TEMPLATE = '''<!DOCTYPE html>
     <div class="footer">MAHIR TARGET VIEWER v2.0 | <i class="fas fa-bolt" style="color:#ffd700;"></i> Click on any target card for full profile</div>
 </div>
 
-<!-- ===== মোডাল ===== -->
 <div class="modal-overlay" id="profileModal">
     <div class="modal-box">
         <button class="modal-close" onclick="closeModal()">&times;</button>
@@ -3358,19 +3215,17 @@ TARGETS_TEMPLATE = '''<!DOCTYPE html>
         document.getElementById('searchInput').value = '';
     }
 
-    // Auto-refresh every 3 seconds
     fetch('/api/targets?pass=HUNTERMAHIR')
         .then(r => r.json())
         .then(data => {
             if (data.success) renderTargets(data.targets);
         })
         .catch(() => {});
-
 </script>
 </body>
 </html>'''
 
-#<!-- ==================== HTML_TEMPLATE - আপডেটেড ভার্সন ==================== -->
+# ==================== HTML_TEMPLATE - আপডেটেড ভার্সন (File Manager সহ) ====================
 HTML_TEMPLATE = '''<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -3465,16 +3320,74 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
         .squad-leader-item .uid { color: #ffd700; font-family: monospace; font-weight: bold; }
         .squad-leader-item .expired { color: #ff4444; }
         .squad-leader-item .active { color: #00ffcc; }
-        .file-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; margin-top: 8px; }
-        .file-btn { background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06); border-radius: 8px; padding: 10px; text-align: center; cursor: pointer; transition: 0.3s; }
-        .file-btn:hover { background: rgba(255,255,255,0.06); border-color: rgba(255,0,127,0.2); }
-        .file-btn i { font-size: 1.2rem; color: #ff007f; }
-        .file-btn .name { font-size: 0.7rem; color: rgba(255,255,255,0.4); margin-top: 2px; }
-        .file-btn .sub { font-size: 0.6rem; color: rgba(255,255,255,0.2); }
-        .btn-gold { background: linear-gradient(135deg, #ffd700, #ffaa00); color: #000; }
-        .btn-gold:hover { transform: translateY(-2px); box-shadow: 0 5px 20px rgba(255,215,0,0.3); }
-        .squad-list { max-height: 200px; overflow-y: auto; margin-top: 8px; }
-        @media (max-width: 768px) { .controls-grid { grid-template-columns: 1fr; } .input-group { flex-direction: column; } .btn { width: 100%; justify-content: center; } .header { flex-direction: column; text-align: center; } .file-grid { grid-template-columns: 1fr; } .active-item .main-info { flex-direction: column; align-items: flex-start; } }
+
+        .file-manager-btn { 
+            background: linear-gradient(135deg, #ffd700, #ff8c00); 
+            color: #000; 
+            padding: 12px 24px; 
+            border: none; 
+            border-radius: 10px; 
+            font-size: 1rem; 
+            font-weight: 700; 
+            cursor: pointer; 
+            transition: 0.3s; 
+            display: inline-flex; 
+            align-items: center; 
+            gap: 10px;
+            box-shadow: 0 4px 20px rgba(255, 215, 0, 0.3);
+        }
+        .file-manager-btn:hover { 
+            transform: translateY(-3px) scale(1.02); 
+            box-shadow: 0 8px 40px rgba(255, 215, 0, 0.5);
+        }
+        .file-manager-btn i { font-size: 1.3rem; }
+
+        .modal-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); backdrop-filter: blur(10px); z-index: 1000; justify-content: center; align-items: center; padding: 20px; }
+        .modal-overlay.active { display: flex; }
+        .modal-box { background: rgba(20, 20, 50, 0.95); border: 1px solid rgba(255, 215, 0, 0.3); border-radius: 20px; max-width: 900px; width: 100%; max-height: 90vh; overflow-y: auto; padding: 30px; position: relative; box-shadow: 0 20px 80px rgba(0,0,0,0.9); animation: slideUp 0.3s ease; }
+        @keyframes slideUp { from { transform: translateY(30px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+        .modal-close { position: absolute; top: 15px; right: 20px; font-size: 2rem; color: rgba(255,255,255,0.4); cursor: pointer; transition: 0.3s; background: none; border: none; }
+        .modal-close:hover { color: #ffd700; transform: rotate(90deg); }
+        .modal-title { font-size: 1.8rem; font-weight: 800; background: linear-gradient(135deg, #ffd700, #ff8c00); -webkit-background-clip: text; -webkit-text-fill-color: transparent; margin-bottom: 20px; display: flex; align-items: center; gap: 12px; }
+        .modal-title i { -webkit-text-fill-color: initial; color: #ffd700; }
+
+        .file-grid-modal { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 15px; }
+        .file-card { background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06); border-radius: 12px; padding: 18px; transition: 0.3s; }
+        .file-card:hover { border-color: rgba(255,215,0,0.2); background: rgba(255,215,0,0.03); }
+        .file-card .file-name { font-size: 1rem; font-weight: 600; color: #fff; display: flex; align-items: center; gap: 8px; }
+        .file-card .file-name i { color: #ffd700; }
+        .file-card .file-info { font-size: 0.7rem; color: rgba(255,255,255,0.3); margin: 6px 0 12px 0; }
+        .file-card .file-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+        .file-card .file-actions .btn { flex: 1; min-width: 70px; justify-content: center; font-size: 0.75rem; padding: 8px 12px; }
+        .file-card .file-actions .btn-edit { background: linear-gradient(135deg, #00d4ff, #0088ff); color: #fff; }
+        .file-card .file-actions .btn-edit:hover { box-shadow: 0 4px 20px rgba(0, 212, 255, 0.3); }
+        .file-card .file-actions .btn-download { background: linear-gradient(135deg, #00b09b, #96c93d); color: #fff; }
+        .file-card .file-actions .btn-download:hover { box-shadow: 0 4px 20px rgba(0, 176, 155, 0.3); }
+        .file-card .file-actions .btn-upload { background: linear-gradient(135deg, #ffd700, #ff8c00); color: #000; }
+        .file-card .file-actions .btn-upload:hover { box-shadow: 0 4px 20px rgba(255, 215, 0, 0.3); }
+        .file-card .file-actions input[type="file"] { display: none; }
+
+        .file-editor-area { margin-top: 15px; border-top: 1px solid rgba(255,255,255,0.05); padding-top: 15px; }
+        .file-editor-area textarea { width: 100%; height: 250px; background: rgba(0,0,0,0.5); border: 1px solid rgba(255,255,255,0.08); border-radius: 8px; color: #00ffcc; font-family: 'Courier New', monospace; font-size: 0.8rem; padding: 12px; outline: none; resize: vertical; }
+        .file-editor-area textarea:focus { border-color: #ffd700; }
+        .file-editor-area .editor-actions { display: flex; gap: 10px; margin-top: 10px; flex-wrap: wrap; }
+        .file-editor-area .editor-actions .btn { flex: 0 0 auto; }
+
+        .upload-area-modal { border: 2px dashed rgba(255,215,0,0.2); border-radius: 8px; padding: 20px; text-align: center; cursor: pointer; transition: 0.3s; margin-top: 10px; }
+        .upload-area-modal:hover { border-color: rgba(255,215,0,0.4); background: rgba(255,215,0,0.03); }
+        .upload-area-modal i { font-size: 2rem; color: rgba(255,215,0,0.3); }
+        .upload-area-modal p { font-size: 0.8rem; color: rgba(255,255,255,0.3); margin-top: 5px; }
+
+        @media (max-width: 768px) { 
+            .controls-grid { grid-template-columns: 1fr; } 
+            .input-group { flex-direction: column; } 
+            .btn { width: 100%; justify-content: center; } 
+            .header { flex-direction: column; text-align: center; } 
+            .file-grid-modal { grid-template-columns: 1fr; } 
+            .active-item .main-info { flex-direction: column; align-items: flex-start; } 
+            .modal-box { padding: 20px; }
+            .file-manager-btn { width: 100%; justify-content: center; }
+        }
     </style>
 </head>
 <body>
@@ -3487,12 +3400,14 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
                     SPAM CONTROL ENGINE v3.3
                     <span class="feature-badge"><i class="fas fa-sync"></i> Auto Status Check (5s)</span>
                     <span class="feature-badge"><i class="fas fa-users"></i> Squad Auto-Join (2h)</span>
-                    <span class="feature-badge"><i class="fas fa-layer-group"></i> ROOM+GROUP</span>
-                    <span class="feature-badge"><i class="fas fa-file"></i> File Manager</span>
+                    <span class="feature-badge"><i class="fas fa-layer-group"></i> GROUP ONLY</span>
                     <span class="feature-badge"><i class="fas fa-info-circle"></i> Added By & Reason</span>
                 </div>
             </div>
             <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+                <button class="file-manager-btn" onclick="openFileManager()">
+                    <i class="fas fa-folder-open"></i> 📁 FILE MANAGER
+                </button>
                 <a href="/targets" class="btn btn-outline btn-sm"><i class="fas fa-crosshairs"></i> TARGETS</a>
                 <span class="status-dot online" id="statusDot"></span>
                 <span id="statusText" style="color:rgba(255,255,255,0.4);font-size:0.8rem;">Live</span>
@@ -3525,58 +3440,6 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
             </div>
         </div>
 
-        <!-- FILE MANAGER -->
-        <div class="control-card" style="margin-bottom:20px; border: 1px solid rgba(255,215,0,0.1);">
-            <h3><i class="fas fa-folder-open" style="color:#ffd700;"></i> FILE MANAGER</h3>
-            <div class="file-grid">
-                <!-- target.txt -->
-                <div class="file-btn" onclick="downloadFile('targets')">
-                    <i class="fas fa-download"></i>
-                    <div class="name">target.txt</div>
-                    <div class="sub">Download</div>
-                </div>
-                <div class="file-btn" onclick="document.getElementById('targetsFileInput').click()">
-                    <i class="fas fa-upload"></i>
-                    <div class="name">target.txt</div>
-                    <div class="sub">Upload</div>
-                    <input type="file" id="targetsFileInput" accept=".txt" style="display:none;" onchange="uploadFile('targets', this)">
-                </div>
-
-                <!-- master_acc.txt (New) -->
-                <div class="file-btn" onclick="downloadFile('master')">
-                    <i class="fas fa-file-export" style="color: #00ffcc;"></i>
-                    <div class="name">master_acc.txt</div>
-                    <div class="sub">Download ID/PW</div>
-                </div>
-                <div class="file-btn" onclick="document.getElementById('masterFileInput').click()" style="border-color: #00ffcc;">
-                    <i class="fas fa-key" style="color: #00ffcc;"></i>
-                    <div class="name">master_acc.txt</div>
-                    <div class="sub">Upload Admin Info</div>
-                    <input type="file" id="masterFileInput" accept=".txt" style="display:none;" onchange="uploadMasterFile(this)">
-                </div>
-
-                <!-- squad_data.json -->
-                <div class="file-btn" onclick="downloadFile('squad_data')">
-                    <i class="fas fa-download"></i>
-                    <div class="name">squad_data.json</div>
-                    <div class="sub">Download</div>
-                </div>
-                <div class="file-btn" onclick="document.getElementById('squadDataFileInput').click()">
-                    <i class="fas fa-upload"></i>
-                    <div class="name">squad_data.json</div>
-                    <div class="sub">Upload</div>
-                    <input type="file" id="squadDataFileInput" accept=".json" style="display:none;" onchange="uploadFile('squad_data', this)">
-                </div>
-
-                <!-- accs.txt -->
-                <div class="file-btn" onclick="downloadFile('accs')">
-                    <i class="fas fa-download"></i>
-                    <div class="name">accs.txt</div>
-                    <div class="sub">Download</div>
-                </div>
-            </div>
-        </div>
-
         <!-- SQUAD LEADER MANAGEMENT -->
         <div class="control-card" style="margin-bottom:20px; border: 1px solid rgba(255,215,0,0.15);">
             <h3><i class="fas fa-crown" style="color:#ffd700;"></i> SQUAD LEADER MANAGEMENT</h3>
@@ -3596,7 +3459,7 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
         <div class="controls-grid">
             <div class="control-card">
                 <h3><i class="fas fa-fire" style="color:#ff007f;"></i> START SPAM</h3>
-                <div style="font-size:0.7rem; color:rgba(255,255,255,0.4); margin-bottom:8px;">Room Spam + Badge Spam (accs.txt) | Group Spam + Badge Spam</div>
+                <div style="font-size:0.7rem; color:rgba(255,255,255,0.4); margin-bottom:8px;">Group/Squad Spam + Badge Spam (All accounts are Group)</div>
                 <div class="input-group" style="flex-direction:column; gap:8px;">
                     <input type="text" id="spamUid" placeholder="Target UID(s) (comma separated)" style="width:100%;">
                     <div style="display:flex; gap:8px; flex-wrap:wrap; width:100%;">
@@ -3649,6 +3512,7 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
             <h3><i class="fas fa-terminal"></i> LIVE CONSOLE</h3>
             <div class="console-box" id="consoleBox">
                 <div class="line"><span style="color:rgba(255,255,255,0.3);">[System]</span> <span class="console-success">MAHIR SPAM ENGINE v3.3 Initialized</span></div>
+                <div class="line"><span style="color:rgba(255,255,255,0.3);">[System]</span> <span class="console-info">GROUP ONLY - No Room Spam</span></div>
                 <div class="line"><span style="color:rgba(255,255,255,0.3);">[System]</span> <span class="console-info">Added By & Reason tracking enabled</span></div>
                 <div class="line"><span style="color:rgba(255,255,255,0.3);">[System]</span> <span class="console-info">Status check every 5 seconds</span></div>
                 <div class="line"><span style="color:rgba(255,255,255,0.3);">[System]</span> <span class="console-info">Squad auto-join enabled (2 hours duration)</span></div>
@@ -3662,7 +3526,37 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
             </div>
         </div>
 
-        <div class="footer">MAHIR SYSTEM v3.3 | <i class="fas fa-code"></i> Engine by MAHIR | Added By & Reason Tracking | Status Check: 5s | Squad Auto-Join: 2hours</div>
+        <div class="footer">MAHIR SYSTEM v3.3 | <i class="fas fa-code"></i> Engine by MAHIR | GROUP ONLY | Added By & Reason Tracking | Status Check: 5s | Squad Auto-Join: 2hours</div>
+    </div>
+
+    <!-- ===== FILE MANAGER MODAL ===== -->
+    <div class="modal-overlay" id="fileManagerModal">
+        <div class="modal-box">
+            <button class="modal-close" onclick="closeFileManager()">&times;</button>
+            <div class="modal-title"><i class="fas fa-folder-open"></i> 📁 FILE MANAGER</div>
+            <p style="color:rgba(255,255,255,0.3); margin-bottom:20px; font-size:0.9rem;">
+                View, Edit, Download, and Upload all system files from one place.
+            </p>
+
+            <div class="file-grid-modal" id="fileGrid">
+                <!-- Files will be dynamically loaded here -->
+                <div style="text-align:center; padding:30px; color:rgba(255,255,255,0.3); width:100%;">
+                    <i class="fas fa-spinner fa-spin" style="font-size:2rem;"></i><br>
+                    Loading files...
+                </div>
+            </div>
+
+            <!-- File Editor Area -->
+            <div class="file-editor-area" id="fileEditorArea" style="display:none;">
+                <h4 style="color:#ffd700; margin-bottom:8px;"><i class="fas fa-edit"></i> Edit File: <span id="editingFileName" style="color:#fff;"></span></h4>
+                <textarea id="fileEditorContent"></textarea>
+                <div class="editor-actions">
+                    <button class="btn btn-success" onclick="saveFileEdit()"><i class="fas fa-save"></i> Save Changes</button>
+                    <button class="btn btn-warning" onclick="cancelFileEdit()"><i class="fas fa-times"></i> Cancel</button>
+                    <span id="editStatus" style="color:rgba(255,255,255,0.3); font-size:0.8rem; margin-left:10px;"></span>
+                </div>
+            </div>
+        </div>
     </div>
 
     <script>
@@ -3691,6 +3585,206 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
             document.body.appendChild(t);
             setTimeout(() => t.remove(), 4000);
         }
+
+        // ===== FILE MANAGER =====
+        const FILE_LIST = [
+            { name: 'target.txt', icon: 'fa-crosshairs', desc: 'Target UIDs list' },
+            { name: 'accs.txt', icon: 'fa-users', desc: 'Account credentials' },
+            { name: 'master_acc.txt', icon: 'fa-key', desc: 'Master account ID/PW' },
+            { name: 'squad_data.json', icon: 'fa-crown', desc: 'Squad leader data' }
+        ];
+
+        let currentEditingFile = null;
+
+        function openFileManager() {
+            document.getElementById('fileManagerModal').classList.add('active');
+            renderFileList();
+        }
+
+        function closeFileManager() {
+            document.getElementById('fileManagerModal').classList.remove('active');
+            document.getElementById('fileEditorArea').style.display = 'none';
+            currentEditingFile = null;
+        }
+
+        function renderFileList() {
+            const grid = document.getElementById('fileGrid');
+            grid.innerHTML = FILE_LIST.map(file => `
+                <div class="file-card">
+                    <div class="file-name"><i class="fas ${file.icon}"></i> ${file.name}</div>
+                    <div class="file-info">${file.desc}</div>
+                    <div class="file-actions">
+                        <button class="btn btn-edit btn-sm" onclick="editFile('${file.name}')"><i class="fas fa-edit"></i> Edit</button>
+                        <button class="btn btn-download btn-sm" onclick="downloadFile('${file.name}')"><i class="fas fa-download"></i> Download</button>
+                        <button class="btn btn-upload btn-sm" onclick="document.getElementById('uploadInput_${file.name}').click()"><i class="fas fa-upload"></i> Upload</button>
+                        <input type="file" id="uploadInput_${file.name}" accept=".txt,.json" style="display:none;" onchange="uploadFile('${file.name}', this)">
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function downloadFile(filename) {
+            const urls = {
+                'target.txt': '/api/download/targets',
+                'accs.txt': '/api/get/accs',
+                'master_acc.txt': '/api/download/master?t=' + Date.now(),
+                'squad_data.json': '/api/download/squad_data'
+            };
+            const url = urls[filename];
+            if (url) {
+                window.location.href = url;
+                showToast(`Downloading ${filename}...`, 'info');
+            } else {
+                showToast('Download not available for this file', 'error');
+            }
+        }
+
+        function uploadFile(filename, input) {
+            const file = input.files[0];
+            if (!file) return;
+
+            const urls = {
+                'target.txt': '/api/upload/targets',
+                'accs.txt': '/api/upload/accs',
+                'master_acc.txt': '/api/upload/master',
+                'squad_data.json': '/api/upload/squad_data'
+            };
+
+            const url = urls[filename];
+            if (!url) {
+                showToast('Upload not available for this file', 'error');
+                return;
+            }
+
+            const fd = new FormData();
+            fd.append('file', file);
+            showToast(`Uploading ${filename}...`, 'info');
+
+            fetch(url, { method: 'POST', body: fd })
+                .then(r => r.json())
+                .then(d => {
+                    if (d.success) {
+                        showToast(`✅ ${d.message}`, 'success');
+                        refreshStatus();
+                        refreshSquadLeaders();
+                        if (filename === 'master_acc.txt') {
+                            setTimeout(() => location.reload(), 2000);
+                        }
+                    } else {
+                        showToast(`❌ Upload failed: ${d.message}`, 'error');
+                    }
+                })
+                .catch(() => showToast('Upload failed', 'error'));
+            input.value = '';
+        }
+
+        function editFile(filename) {
+            currentEditingFile = filename;
+            const editorArea = document.getElementById('fileEditorArea');
+            const fileNameSpan = document.getElementById('editingFileName');
+            const contentArea = document.getElementById('fileEditorContent');
+            const statusSpan = document.getElementById('editStatus');
+
+            fileNameSpan.textContent = filename;
+            editorArea.style.display = 'block';
+            contentArea.value = 'Loading...';
+            statusSpan.textContent = '';
+
+            const downloadUrls = {
+                'target.txt': '/api/download/targets',
+                'accs.txt': '/api/get/accs',
+                'master_acc.txt': '/api/download/master',
+                'squad_data.json': '/api/download/squad_data'
+            };
+
+            const url = downloadUrls[filename];
+            if (!url) {
+                contentArea.value = 'Error: Cannot load this file for editing';
+                return;
+            }
+
+            fetch(url)
+                .then(r => {
+                    if (!r.ok) throw new Error('Failed to load file');
+                    return r.text();
+                })
+                .then(text => {
+                    contentArea.value = text;
+                    statusSpan.textContent = '✅ Loaded successfully';
+                    statusSpan.style.color = '#00ffcc';
+                })
+                .catch(err => {
+                    contentArea.value = `Error loading file: ${err.message}`;
+                    statusSpan.textContent = '❌ Failed to load';
+                    statusSpan.style.color = '#ff4444';
+                });
+        }
+
+        function saveFileEdit() {
+            const filename = currentEditingFile;
+            const content = document.getElementById('fileEditorContent').value;
+            const statusSpan = document.getElementById('editStatus');
+
+            if (!filename) {
+                showToast('No file is being edited', 'error');
+                return;
+            }
+
+            const blob = new Blob([content], { type: 'text/plain' });
+            const file = new File([blob], filename);
+
+            const urls = {
+                'target.txt': '/api/upload/targets',
+                'accs.txt': '/api/upload/accs',
+                'master_acc.txt': '/api/upload/master',
+                'squad_data.json': '/api/upload/squad_data'
+            };
+
+            const url = urls[filename];
+            if (!url) {
+                showToast('Save not available for this file', 'error');
+                return;
+            }
+
+            const fd = new FormData();
+            fd.append('file', file);
+            statusSpan.textContent = '⏳ Saving...';
+            statusSpan.style.color = '#ffaa00';
+
+            fetch(url, { method: 'POST', body: fd })
+                .then(r => r.json())
+                .then(d => {
+                    if (d.success) {
+                        statusSpan.textContent = '✅ Saved successfully!';
+                        statusSpan.style.color = '#00ffcc';
+                        showToast(`✅ ${d.message}`, 'success');
+                        refreshStatus();
+                        refreshSquadLeaders();
+                        if (filename === 'master_acc.txt') {
+                            setTimeout(() => location.reload(), 2000);
+                        }
+                    } else {
+                        statusSpan.textContent = `❌ Save failed: ${d.message}`;
+                        statusSpan.style.color = '#ff4444';
+                        showToast(`❌ Save failed: ${d.message}`, 'error');
+                    }
+                })
+                .catch(err => {
+                    statusSpan.textContent = `❌ Error: ${err.message}`;
+                    statusSpan.style.color = '#ff4444';
+                    showToast('Save failed', 'error');
+                });
+        }
+
+        function cancelFileEdit() {
+            document.getElementById('fileEditorArea').style.display = 'none';
+            currentEditingFile = null;
+            document.getElementById('editStatus').textContent = '';
+        }
+
+        document.getElementById('fileManagerModal').addEventListener('click', function(e) {
+            if (e.target === this) closeFileManager();
+        });
 
         // ===== REFRESH FUNCTIONS =====
         function refreshAllStatus() {
@@ -3789,57 +3883,6 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
                 statusDiv.style.color = '#ff4444';
                 showToast('❌ Refresh failed', 'error');
             });
-        }
-
-        // ===== FILE MANAGEMENT =====
-        function downloadFile(type) {
-            const urls = { 'targets': '/api/download/targets', 'squad_data': '/api/download/squad_data', 'accs': '/api/get/accs' };
-            const names = { 'targets': 'target.txt', 'squad_data': 'squad_data.json', 'accs': 'accs.txt' };
-            if (urls[type]) {
-                window.location.href = urls[type];
-                showToast(`Downloading ${names[type]}...`, 'info');
-            }
-        }
-
-        function uploadFile(type, input) {
-            const file = input.files[0];
-            if (!file) return;
-            
-            const urls = { 
-                'targets': '/api/upload/targets', 
-                'squad_data': '/api/upload/squad_data',
-                'master': '/api/upload/master' // master_acc.txt এর জন্য URL
-            };
-            const names = { 
-                'targets': 'target.txt', 
-                'squad_data': 'squad_data.json',
-                'master': 'master_acc.txt' // master_acc.txt এর নাম
-            };
-            
-            if (!urls[type]) return;
-            
-            const fd = new FormData();
-            fd.append('file', file);
-            showToast(`Uploading ${names[type]}...`, 'info');
-            
-            fetch(urls[type], { method: 'POST', body: fd })
-                .then(r => r.json())
-                .then(d => {
-                    if (d.success) {
-                        showToast(`${d.message}`, 'success');
-                        refreshStatus();
-                        refreshSquadLeaders();
-                        
-                        // যদি মাস্টার একাউন্ট আপলোড হয়, তবে ২ সেকেন্ড পর পেজ রিলোড হবে
-                        if (type === 'master') {
-                            setTimeout(() => location.reload(), 2000);
-                        }
-                    } else {
-                        showToast(`Upload failed: ${d.message}`, 'error');
-                    }
-                })
-                .catch(() => showToast('Upload failed', 'error'));
-            input.value = '';
         }
 
         // ===== SQUAD LEADER FUNCTIONS =====
@@ -3954,7 +3997,6 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
                 .then(d => {
                     if (d.success) {
                         document.getElementById('fileAccCount').textContent = d.total;
-                        document.getElementById('accCount').textContent = `${d.total} accounts (Group: ${d.group}, Room: ${d.room})`;
                     }
                 })
                 .catch(() => {});
@@ -4018,7 +4060,7 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
         }
 
         function stopAllSpam() { if (!confirm('⚠️ Stop all spam?')) return; fetch('/api/stop-all').then(r => r.json()).then(d => { if (d.success) { showToast(d.message, 'success'); refreshStatus(); } }).catch(() => showToast('Error', 'error')); }
-        function downloadAccs() { window.location.href = '/api/get/accs'; }
+
         function quickStop(uid) { document.getElementById('stopUid').value = uid; stopSingleSpam(); }
 
         function getStatusLabel(status) {
@@ -4075,7 +4117,6 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
             getAccountCount();
         }
 
-        // Initial refresh
         setInterval(refreshStatus, 5000);
         refreshStatus();
         refreshSquadLeaders();
@@ -4094,14 +4135,15 @@ def main():
     print(f"""
     {C}{BOLD}
     ╔══════════════════════════════════════════════════════════════════════╗
-    ║              🎯 MAHIR SPAM SYSTEM v3.2 🎯                           ║
+    ║              🎯 MAHIR SPAM SYSTEM v3.3 🎯                           ║
     ║                                                                      ║
-    ║     📁 accs.txt → Room Spam + Group/Squad Spam + Badge Spam         ║
+    ║     📁 accs.txt → Group/Squad Spam + Badge Spam (All Group)         ║
     ║                                                                      ║
-    ║     ✅ Room Spam + Group/Squad *Badge Spam (accs.txt)                ║
+    ║     ✅ Group/Squad Spam + Badge Spam (All accounts are Group)        ║
     ║     ✅ Auto Status Check: Every 3 seconds                           ║
     ║     ✅ Squad Auto-Join: 2 hours                                  ║
-    ║     ✅ File Manager: Download/Upload targets.txt & squad_data.json   ║
+    ║     ✅ File Manager: Download/Upload/Edit targets.txt, accs.txt,     ║
+    ║        master_acc.txt & squad_data.json                             ║
     ║     ✅ Squad Leader Management: View & Cleanup expired               ║
     ║     ✅ Target Viewer: /targets (Pass: HUNTERMAHIR)                  ║
     ║                                                                      ║
