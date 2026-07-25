@@ -210,12 +210,35 @@ def load_saved_targets():
                 if uid.isdigit():
                     start_spam(uid, 'full')
 
-# ==================== STATUS CHECKER ====================
-_ID = '5649294103'
-_PW = 'D3E3F9FD27EE1E01DF23CB4FAB5B9C4161F397BC494A9747171D358A33874CEE'
+# ==================== STATUS CHECKER (DYNAMIC) ====================
+MASTER_ACC_FILE = "accs.txt"
+ALL_STATUS_ACCS = [] 
 _TTL = 6 * 60 * 60
 _cx = {}
 _lk = threading.Lock()
+
+def load_master_credentials():
+    global ALL_STATUS_ACCS
+    ALL_STATUS_ACCS = []
+    try:
+        if os.path.exists(MASTER_ACC_FILE):
+            with open(MASTER_ACC_FILE, "r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if line and not line.startswith("#") and ":" in line:
+                        parts = line.split(":")
+                        uid = parts[0].strip()
+                        pwd = parts[1].strip()
+                        if uid.isdigit():
+                            ALL_STATUS_ACCS.append({'uid': uid, 'pwd': pwd})
+            print(f"\033[92m✅ {len(ALL_STATUS_ACCS)} Accounts Loaded for Status Checking.\033[0m")
+        else:
+            print(f"\033[91m⚠️ accs.txt not found!\033[0m")
+    except Exception as e:
+        print(f"Error loading status accounts: {e}")
+
+# স্ক্রিপ্ট চালুর সময় একাউন্টগুলো লোড হবে
+load_master_credentials()
 
 _Hr = {
     'User-Agent': 'Dalvik/2.1.0 (Linux; U; Android 9; G011A Build/PI)',
@@ -227,7 +250,6 @@ _Hr = {
     'X-GA': 'v1 1',
     'ReleaseVersion': CURRENT_OB,
 }
-
 async def encrypted_proto(data_bytes):
     key = b'Yg&tc%DEuh6%Zc^8'
     iv = b'6oyZDr22E3ychjM%'
@@ -237,65 +259,71 @@ async def encrypted_proto(data_bytes):
 async def EncRypTMajoRLoGin(open_id, access_token, version):
     major_login = MajoRLoGinrEq_pb2.MajorLogin()
     
-    major_login.event_time = str(datetime.now())[:-7]
-    major_login.game_name = "free fire"
-    major_login.platform_id = 2
-    major_login.client_version = FREEFIRE_VERSION_NAME
-    major_login.system_software = "Android OS 15 / API-35 (AP3A.240617.008/T.R4T2.230617d-33f5e)"
-    major_login.system_hardware = "Handheld"
-    major_login.telecom_operator = "Robi"
-    major_login.network_type = "WIFI"
-    major_login.screen_width = 1666
-    major_login.screen_height = 750
-    major_login.screen_dpi = "314"
-    major_login.processor_details = "ARM64 FP ASIMD AES | 2000 | 8"
-    major_login.memory = 7723
-    major_login.gpu_renderer = "Mali-G52 MC2"
-    major_login.gpu_version = "OpenGL ES 3.2 v1.r49p1-03bet0.19498e0ae1d5dac223383c39a2e58f04"
-    major_login.unique_device_id = "Google|9683cec2-b6fc-424c-aa18-d32bc0e0af87"
+    # আপনার দেওয়া JSON ডাটা অনুযায়ী আপডেট
+    major_login.event_time = str(datetime.now())[:-7] # Field 3
+    major_login.game_name = "free fire"           # Field 4
+    major_login.platform_id = 2        # Field 5 (JSON এ ১ ছিল)
+    major_login.client_version = FREEFIRE_VERSION_NAME       # Field 7
+    major_login.system_software = "Android OS 15 / API-35 (AP3A.240617.008/T.R4T2.230617d-33f5e)" # Field 8
+    major_login.system_hardware = "Handheld"       # Field 9
+    major_login.telecom_operator = "Robi"          # Field 10
+    major_login.network_type = "WIFI"              # Field 11
+    major_login.screen_width = 1666                # Field 12
+    major_login.screen_height = 750                # Field 13
+    major_login.screen_dpi = "314"                 # Field 14
+    major_login.processor_details = "ARM64 FP ASIMD AES | 2000 | 8" # Field 15
+    major_login.memory = 7723                      # Field 16
+    major_login.gpu_renderer = "Mali-G52 MC2"      # Field 17
+    major_login.gpu_version = "OpenGL ES 3.2 v1.r49p1-03bet0.19498e0ae1d5dac223383c39a2e58f04" # Field 18
+    major_login.unique_device_id = "Google|9683cec2-b6fc-424c-aa18-d32bc0e0af87" # Field 19
     
-    major_login.language = "en"
-    major_login.open_id = open_id
+    major_login.language = "en"                    # Field 21
+    major_login.open_id = open_id                  # Field 22 (Dynamic)
     major_login.open_id_type = "4"
-    major_login.login_open_id_type = 4
-    major_login.access_token = access_token
+    major_login.login_open_id_type = 4             # Field 30
+    major_login.access_token = access_token        # Field 29 (Dynamic)
     major_login.login_by = 3
-    major_login.device_type = "Handheld"
+    major_login.device_type = "Handheld"           # Field 24
     
     major_login.platform_sdk_id = 2
     major_login.origin_platform_type = "4"
     major_login.primary_platform_type = "4"
     
-    major_login.network_operator_a = "Robi"
-    major_login.network_type_a = "WIFI"
+    # নেটওয়ার্ক অপারেটর এবং টাইপ (Field 41, 42)
+    major_login.network_operator_a = "Robi"        # Field 41
+    major_login.network_type_a = "WIFI"            # Field 42
 
+    # মেমোরি স্টেট
     major_login.memory_available.version = 55
     major_login.memory_available.hidden_value = 81
     
-    major_login.external_storage_total = 225554
-    major_login.external_storage_available = 77192
-    major_login.internal_storage_total = 225554
-    major_login.internal_storage_available = 77716
-    major_login.game_disk_storage_total = 225554
-    major_login.game_disk_storage_available = 77716
+    # স্টোরেজ ডাটা (Field 60-67)
+    major_login.external_storage_total = 225554    # Field 60
+    major_login.external_storage_available = 77192 # Field 61
+    major_login.internal_storage_total = 225554    # Field 65
+    major_login.internal_storage_available = 77716 # Field 64
+    major_login.game_disk_storage_total = 225554   # Field 67
+    major_login.game_disk_storage_available = 77716 # Field 66
     
-    major_login.library_path = "/data/app/~~eI6I6W4wOsVjxgnf1TGOiw==/com.dts.freefireth-E-hRAzA1WRAwmVJah_awUQ==/lib/arm64"
-    major_login.library_token = "4c322aeb56444feaa151d1ea91a8f7f2|/data/app/~~eI6I6W4wOsVjxgnf1TGOiw==/com.dts.freefireth-E-hRAzA1WRAwmVJah_awUQ==/base.apk"
+    # ফাইল পাথ এবং টোকেন (Field 74, 77)
+    major_login.library_path = "/data/app/~~eI6I6W4wOsVjxgnf1TGOiw==/com.dts.freefireth-E-hRAzA1WRAwmVJah_awUQ==/lib/arm64" # Field 74
+    major_login.library_token = "4c322aeb56444feaa151d1ea91a8f7f2|/data/app/~~eI6I6W4wOsVjxgnf1TGOiw==/com.dts.freefireth-E-hRAzA1WRAwmVJah_awUQ==/base.apk" # Field 77
     
-    major_login.client_using_version = "7428b253defc164018c604a1ebbfebdf"
-    major_login.supported_astc_bitset = 8191
+    major_login.client_using_version = "7428b253defc164018c604a1ebbfebdf" # Field 57
+    major_login.supported_astc_bitset = 8191       # Field 87
     
+    # Analytics Detail (Field 94) - এটি বাইটস হিসেবে থাকে
     major_login.analytics_detail = b"KqsHT20lrgH2VZSZVBrjiMQlH1D4ByEnCuAp9O88Z77L10j7f3Nyn/PzA3fYYKorO4qAlimdHPTie8ttBgw98SG36+U=" 
     
-    major_login.loading_time = 111207
-    major_login.release_channel = "android"
-    major_login.if_push = 1
+    major_login.loading_time = 111207              # Field 95
+    major_login.release_channel = "android"        # Field 93
+    major_login.if_push = 1                        # Field 97
     major_login.is_vpn = 0
     major_login.cpu_type = 2
-    major_login.cpu_architecture = "64"
-    major_login.client_version_code = "2019120828"
-    major_login.graphics_api = "OpenGLES2"
-    major_login.android_engine_init_flag = 1003114253
+    major_login.cpu_architecture = "64"            # Field 81
+    major_login.client_version_code = "2019120828" # Field 83
+    major_login.graphics_api = "OpenGLES2"         # Field 86
+    major_login.android_engine_init_flag = 1003114253 # Field 102 (Numeric part taken)
 
     serialized_data = major_login.SerializeToString()
     return await encrypted_proto(serialized_data)
@@ -471,22 +499,36 @@ async def _auth(uid, tok, ts, k, v):
     return f"0115{hd}{uh}{await _hx(ts)}00000{el}{e}"
 
 def get_session_sync():
-    result = None
-    def _run():
-        nonlocal result
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        try:
-            result = loop.run_until_complete(_login())
-        except Exception as e:
-            print(f"{R}❌ Login error: {e}{RS}")
-        finally:
-            loop.close()
-    
-    thread = Thread(target=_run, daemon=True)
-    thread.start()
-    thread.join(timeout=20)
-    return result
+    # এটি সবগুলো একাউন্ট ট্রাই করবে যতক্ষণ না একটি সফল হয়
+    if not ALL_STATUS_ACCS:
+        print(f"{R}❌ No accounts available in ALL_STATUS_ACCS!{RS}")
+        return None
+
+    for acc in ALL_STATUS_ACCS:
+        result = None
+        def _run():
+            nonlocal result
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            try:
+                result = loop.run_until_complete(_login(acc['uid'], acc['pwd']))
+            except Exception as e:
+                result = None
+            finally:
+                loop.close()
+        
+        thread = Thread(target=_run, daemon=True)
+        thread.start()
+        thread.join(timeout=15)
+        
+        if result:
+            print(f"{G}✅ Status Checker Active using ID: {acc['uid']}{RS}")
+            return result
+        else:
+            continue # এই আইডি ফেইল করলে পরেরটা ট্রাই করবে
+
+    print(f"{R}❌ All status check accounts failed!{RS}")
+    return None
 
 def _sess():
     with _lk:
@@ -501,19 +543,25 @@ def _sess():
         return ns
     return None
 
-async def _login():
+async def _login(uid, pwd):
     sx = ssl.create_default_context()
     sx.check_hostname = False
     sx.verify_mode = ssl.CERT_NONE
 
     async with aiohttp.ClientSession() as s:
         async with s.post('https://100067.connect.garena.com/oauth/guest/token/grant', headers=_Hr,
-            data={'uid':_ID,'password':_PW,'response_type':'token','client_type':'2',
+            data={'uid':uid,'password':pwd,'response_type':'token','client_type':'2',
                   'client_secret':'2ee44819e9b4598845141067b281621874d0d5d7af9d8f7e00c1e54715b7d1e3',
                   'client_id':'100067'}, ssl=sx) as r:
             if r.status != 200:
                 raise Exception(f"OAuth {r.status}")
             d = await r.json()
+            
+            if 'open_id' not in d:
+                # এরর হলে কনসোলে দেখাবে কোন আইডিতে সমস্যা
+                print(f"\033[91m❌ ID: {uid} Login Error: {d.get('error', 'Unknown')}\033[0m")
+                raise Exception(f"Login error: 'open_id' not found in response")
+            
             oid = d['open_id']
             atk = d['access_token']
 
@@ -2319,7 +2367,7 @@ def upload_master_account():
         with _lk:
             _cx.clear()
             
-        return jsonify({'success': True, 'message': 'Master Account (master_acc.txt) updated successfully!'})
+        return jsonify({'success': True, 'message': 'Master Account (accs.txt) updated successfully!'})
     except Exception as e:
         return jsonify({'success': False, 'message': str(e)}), 500
 
@@ -3383,43 +3431,99 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
         body { font-family: 'Inter', sans-serif; background: linear-gradient(135deg, #060417, #0e0b30, #130a24); min-height: 100vh; color: #fff; padding: 20px; }
         #matrix-canvas { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; z-index: 0; opacity: 0.3; }
         .container { max-width: 1400px; margin: 0 auto; position: relative; z-index: 1; }
+        
+        /* Header */
         .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px; border-bottom: 1px solid rgba(255,255,255,0.05); padding-bottom: 20px; flex-wrap: wrap; gap: 15px; }
         .logo { font-size: 2.5rem; font-weight: 800; background: linear-gradient(135deg, #ff007f, #7f00ff); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
         .logo i { -webkit-text-fill-color: initial; color: #ff007f; }
+        .feature-badge { display: inline-block; background: rgba(0, 212, 255, 0.1); color: #00d4ff; padding: 2px 10px; border-radius: 10px; font-size: 0.6rem; margin-left: 5px; }
+        .btn { padding: 10px 18px; border: none; border-radius: 8px; font-weight: 600; cursor: pointer; transition: all 0.3s; font-size: 0.85rem; display: inline-flex; align-items: center; gap: 6px; }
+        .btn-outline { background: transparent; border: 1px solid rgba(255,255,255,0.15); color: #fff; }
+        .btn-outline:hover { background: rgba(255,255,255,0.05); }
+        .btn-sm { padding: 6px 12px; font-size: 0.75rem; }
+        .btn-primary { background: linear-gradient(135deg, #ff007f, #7f00ff); color: #fff; }
+        .btn-primary:hover { transform: translateY(-2px); box-shadow: 0 5px 20px rgba(255,0,127,0.3); }
+        .btn-danger { background: linear-gradient(135deg, #ff0844, #ffb199); color: #fff; }
+        .btn-danger:hover { transform: translateY(-2px); box-shadow: 0 5px 20px rgba(255,8,68,0.3); }
+        .btn-success { background: linear-gradient(135deg, #00b09b, #96c93d); color: #fff; }
+        .btn-success:hover { transform: translateY(-2px); box-shadow: 0 5px 20px rgba(0,176,155,0.3); }
+        .btn-warning { background: linear-gradient(135deg, #ffaa00, #ff6600); color: #000; }
+        .btn-warning:hover { transform: translateY(-2px); box-shadow: 0 5px 20px rgba(255,170,0,0.3); }
+        .btn-gold { background: linear-gradient(135deg, #ffd700, #ffaa00); color: #000; }
+        .btn-gold:hover { transform: translateY(-2px); box-shadow: 0 5px 20px rgba(255,215,0,0.3); }
+        .btn-refresh { background: linear-gradient(135deg, #00d4ff, #7f00ff); color: #fff; animation: glow 2s infinite; }
+        .btn-refresh:hover { transform: translateY(-2px) scale(1.02); box-shadow: 0 5px 30px rgba(0,212,255,0.4); }
+        @keyframes glow { 0%, 100% { box-shadow: 0 0 20px rgba(0,212,255,0.2); } 50% { box-shadow: 0 0 40px rgba(0,212,255,0.4); } }
+        
+        /* Stats */
         .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 15px; margin-bottom: 25px; }
         .stat-card { background: rgba(255,255,255,0.03); backdrop-filter: blur(15px); border-radius: 12px; padding: 15px; text-align: center; border: 1px solid rgba(255,255,255,0.06); transition: 0.3s; }
         .stat-card:hover { transform: translateY(-3px); border-color: rgba(255,0,127,0.2); }
         .stat-card i { font-size: 1.5rem; margin-bottom: 5px; color: #ff007f; }
         .stat-card h3 { font-size: 0.7rem; color: rgba(255,255,255,0.4); margin-bottom: 3px; text-transform: uppercase; letter-spacing: 1px; }
         .stat-card .value { font-size: 1.8rem; font-weight: 800; }
+        
+        /* Control Cards */
         .controls-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; margin-bottom: 25px; }
         .control-card { background: rgba(255,255,255,0.02); backdrop-filter: blur(15px); border-radius: 12px; padding: 20px; border: 1px solid rgba(255,255,255,0.06); }
         .control-card h3 { font-size: 0.95rem; margin-bottom: 12px; display: flex; align-items: center; gap: 10px; }
         .control-card h3 i { color: #ff007f; }
+        
+        /* Inputs */
         .input-group { display: flex; gap: 10px; flex-wrap: wrap; }
         .input-group input, .input-group select { flex: 1; padding: 10px 14px; border: 1px solid rgba(255,255,255,0.08); border-radius: 8px; background: rgba(0,0,0,0.4); color: #fff; font-size: 0.9rem; outline: none; transition: 0.3s; min-width: 120px; }
         .input-group input:focus, .input-group select:focus { border-color: #ff007f; box-shadow: 0 0 15px rgba(255,0,127,0.1); }
         .input-group select option { background: #1a1a2e; color: #fff; }
-        .btn { padding: 10px 18px; border: none; border-radius: 8px; font-weight: 600; cursor: pointer; transition: all 0.3s; font-size: 0.85rem; display: inline-flex; align-items: center; gap: 6px; }
-        .btn-primary { background: linear-gradient(135deg, #ff007f, #7f00ff); color: #fff; }
-        .btn-primary:hover { transform: translateY(-2px); box-shadow: 0 5px 20px rgba(255,0,127,0.3); }
-        .btn-danger { background: linear-gradient(135deg, #ff0844, #ffb199); color: #fff; }
-        .btn-danger:hover { transform: translateY(-2px); box-shadow: 0 5px 20px rgba(255,8,68,0.3); }
-        .btn-warning { background: linear-gradient(135deg, #ffaa00, #ff6600); color: #000; }
-        .btn-warning:hover { transform: translateY(-2px); box-shadow: 0 5px 20px rgba(255,170,0,0.3); }
-        .btn-outline { background: transparent; border: 1px solid rgba(255,255,255,0.15); color: #fff; }
-        .btn-outline:hover { background: rgba(255,255,255,0.05); }
-        .btn-sm { padding: 6px 12px; font-size: 0.75rem; }
-        .btn-success { background: linear-gradient(135deg, #00b09b, #96c93d); color: #fff; }
-        .btn-success:hover { transform: translateY(-2px); box-shadow: 0 5px 20px rgba(0,176,155,0.3); }
-        .btn-refresh { background: linear-gradient(135deg, #00d4ff, #7f00ff); color: #fff; animation: glow 2s infinite; }
-        .btn-refresh:hover { transform: translateY(-2px) scale(1.02); box-shadow: 0 5px 30px rgba(0,212,255,0.4); }
-        @keyframes glow { 0%, 100% { box-shadow: 0 0 20px rgba(0,212,255,0.2); } 50% { box-shadow: 0 0 40px rgba(0,212,255,0.4); } }
+        
+        /* Upload Area */
         .upload-area { border: 2px dashed rgba(255,255,255,0.08); border-radius: 8px; padding: 15px; text-align: center; cursor: pointer; transition: 0.3s; }
         .upload-area:hover { border-color: rgba(255,0,127,0.3); background: rgba(255,0,127,0.03); }
         .upload-area.dragover { border-color: #ff007f; background: rgba(255,0,127,0.05); }
         .upload-area i { font-size: 1.5rem; color: rgba(255,255,255,0.2); }
         .upload-area p { font-size: 0.8rem; color: rgba(255,255,255,0.3); }
+        
+        /* ===== FILE MANAGER ===== */
+        .file-manager-toggle { margin-bottom: 12px; }
+        .file-manager-content { display: none; animation: slideDown 0.3s ease; }
+        .file-manager-content.open { display: block; }
+        @keyframes slideDown { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
+        
+        .file-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; margin-top: 8px; }
+        .file-card { background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06); border-radius: 10px; padding: 14px 16px; transition: 0.3s; }
+        .file-card:hover { border-color: rgba(255,0,127,0.2); background: rgba(255,255,255,0.05); }
+        .file-card .file-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+        .file-card .file-name { font-weight: 600; font-size: 0.95rem; display: flex; align-items: center; gap: 8px; }
+        .file-card .file-name i { color: #ffd700; font-size: 1rem; }
+        .file-card .file-name .ext { font-size: 0.6rem; color: rgba(255,255,255,0.3); background: rgba(255,255,255,0.05); padding: 1px 8px; border-radius: 4px; }
+        .file-card .file-actions { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+        .file-card .file-actions .btn { padding: 4px 12px; font-size: 0.7rem; border-radius: 6px; }
+        .file-card .file-actions .btn-edit { background: rgba(0, 212, 255, 0.15); color: #00d4ff; border: 1px solid rgba(0,212,255,0.1); }
+        .file-card .file-actions .btn-edit:hover { background: rgba(0,212,255,0.25); }
+        .file-card .file-actions .btn-download { background: rgba(0, 255, 204, 0.1); color: #00ffcc; border: 1px solid rgba(0,255,204,0.08); }
+        .file-card .file-actions .btn-download:hover { background: rgba(0,255,204,0.2); }
+        .file-card .file-actions .btn-upload { background: rgba(255, 215, 0, 0.1); color: #ffd700; border: 1px solid rgba(255,215,0,0.08); }
+        .file-card .file-actions .btn-upload:hover { background: rgba(255,215,0,0.2); }
+        .file-card .file-actions input[type="file"] { display: none; }
+        .file-card .file-size { font-size: 0.65rem; color: rgba(255,255,255,0.2); margin-top: 4px; }
+        .file-card .file-desc { font-size: 0.6rem; color: rgba(255,255,255,0.2); }
+        
+        /* Edit Modal */
+        .modal-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); backdrop-filter: blur(8px); z-index: 1000; justify-content: center; align-items: center; padding: 20px; }
+        .modal-overlay.active { display: flex; }
+        .modal-box { background: rgba(15, 15, 40, 0.95); border: 1px solid rgba(255, 215, 0, 0.2); border-radius: 16px; max-width: 800px; width: 100%; max-height: 90vh; display: flex; flex-direction: column; box-shadow: 0 20px 80px rgba(0,0,0,0.8); animation: slideUp 0.3s ease; }
+        @keyframes slideUp { from { transform: translateY(30px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+        .modal-header { padding: 18px 24px; border-bottom: 1px solid rgba(255,255,255,0.06); display: flex; justify-content: space-between; align-items: center; }
+        .modal-header h3 { font-size: 1.1rem; display: flex; align-items: center; gap: 10px; }
+        .modal-header h3 i { color: #ffd700; }
+        .modal-close { background: none; border: none; color: rgba(255,255,255,0.4); font-size: 1.5rem; cursor: pointer; transition: 0.3s; }
+        .modal-close:hover { color: #ffd700; transform: rotate(90deg); }
+        .modal-body { padding: 20px 24px; overflow-y: auto; flex: 1; }
+        .modal-body textarea { width: 100%; min-height: 300px; background: rgba(0,0,0,0.5); border: 1px solid rgba(255,255,255,0.08); border-radius: 8px; color: #00ffcc; font-family: 'Courier New', monospace; font-size: 0.8rem; padding: 12px; resize: vertical; outline: none; }
+        .modal-body textarea:focus { border-color: #ffd700; }
+        .modal-footer { padding: 14px 24px; border-top: 1px solid rgba(255,255,255,0.06); display: flex; gap: 10px; justify-content: flex-end; }
+        .modal-footer .btn { padding: 8px 20px; }
+        
+        /* Active List */
         .active-list { max-height: 400px; overflow-y: auto; margin-top: 10px; }
         .active-item { background: rgba(30,30,40,0.6); padding: 12px 14px; margin: 5px 0; border-radius: 8px; display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; border-left: 3px solid #ff007f; gap: 8px; }
         .active-item .main-info { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; flex: 1; }
@@ -3436,60 +3540,63 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
         .active-meta { font-size: 9px; color: rgba(255,255,255,0.25); display: flex; flex-wrap: wrap; gap: 4px 12px; width: 100%; margin-top: 4px; padding-top: 4px; border-top: 1px solid rgba(255,255,255,0.03); }
         .active-meta .added-by { color: #ffd700; }
         .active-meta .reason { color: rgba(255,255,255,0.4); font-style: italic; }
-        .active-meta .time-ago { color: rgba(255,255,255,0.2); }
         .stop-small { background: #eb3349; color: white; border: none; padding: 4px 12px; border-radius: 6px; cursor: pointer; font-size: 10px; font-weight: bold; transition: 0.2s; }
         .stop-small:hover { background: #c0392b; }
-        .account-item { background: rgba(30,30,40,0.4); padding: 3px 10px; margin: 3px 4px; border-radius: 6px; font-family: monospace; font-size: 10px; color: #4facfe; display: inline-block; }
-        .console-box { background: rgba(0,0,0,0.5); border: 1px solid rgba(255,255,255,0.05); border-radius: 10px; height: 200px; padding: 12px; font-family: 'Courier New', monospace; font-size: 0.7rem; color: #00ffcc; overflow-y: auto; }
-        .console-box .line { opacity: 0; animation: fadeLine 0.3s forwards; border-bottom: 1px solid rgba(255,255,255,0.03); padding: 2px 0; }
-        @keyframes fadeLine { to { opacity: 1; } }
-        .toast { position: fixed; bottom: 20px; right: 20px; background: rgba(0,0,0,0.9); padding: 12px 20px; border-radius: 8px; z-index: 999; color:#fff; display:flex; align-items:center; gap:8px; border:1px solid rgba(255,255,255,0.1); animation: slideIn 0.3s cubic-bezier(0.175,0.885,0.32,1.275); }
-        .toast.success { border-color: #00b09b; }
-        .toast.error { border-color: #ff0844; }
-        @keyframes slideIn { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
-        .status-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; margin-right: 5px; }
-        .status-dot.online { background: #00ffcc; animation: pulse 1s infinite; }
-        .status-dot.offline { background: #ff4444; }
-        @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
-        .feature-badge { display: inline-block; background: rgba(0, 212, 255, 0.1); color: #00d4ff; padding: 2px 10px; border-radius: 10px; font-size: 0.6rem; margin-left: 5px; }
-        .footer { text-align: center; color: rgba(255,255,255,0.15); font-size: 0.7rem; margin-top: 25px; padding-top: 15px; border-top: 1px solid rgba(255,255,255,0.03); }
-        .console-success { color: #00ffcc; }
-        .console-error { color: #ff3366; }
-        .console-warning { color: #ffaa00; }
-        .console-info { color: #4facfe; }
-        .reset-info { font-size: 0.7rem; color: rgba(255,255,255,0.3); margin-top: 5px; }
-        .refresh-status-text { font-size: 0.7rem; color: rgba(255,255,255,0.4); margin-top: 8px; padding: 8px 12px; background: rgba(0,0,0,0.3); border-radius: 6px; border-left: 3px solid #00d4ff; }
-        .refresh-status-text .highlight { color: #00ffcc; }
-        .refresh-status-text .error { color: #ff4444; }
+        
+        /* Squad Leader */
+        .squad-list { max-height: 200px; overflow-y: auto; margin-top: 8px; }
         .squad-leader-item { background: rgba(255,215,0,0.05); border-left: 3px solid #ffd700; padding: 8px 12px; margin: 4px 0; border-radius: 6px; display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; font-size: 0.8rem; gap: 6px; }
         .squad-leader-item .uid { color: #ffd700; font-family: monospace; font-weight: bold; }
         .squad-leader-item .expired { color: #ff4444; }
         .squad-leader-item .active { color: #00ffcc; }
-        .file-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; margin-top: 8px; }
-        .file-btn { background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06); border-radius: 8px; padding: 10px; text-align: center; cursor: pointer; transition: 0.3s; }
-        .file-btn:hover { background: rgba(255,255,255,0.06); border-color: rgba(255,0,127,0.2); }
-        .file-btn i { font-size: 1.2rem; color: #ff007f; }
-        .file-btn .name { font-size: 0.7rem; color: rgba(255,255,255,0.4); margin-top: 2px; }
-        .file-btn .sub { font-size: 0.6rem; color: rgba(255,255,255,0.2); }
-        .btn-gold { background: linear-gradient(135deg, #ffd700, #ffaa00); color: #000; }
-        .btn-gold:hover { transform: translateY(-2px); box-shadow: 0 5px 20px rgba(255,215,0,0.3); }
-        .squad-list { max-height: 200px; overflow-y: auto; margin-top: 8px; }
-        @media (max-width: 768px) { .controls-grid { grid-template-columns: 1fr; } .input-group { flex-direction: column; } .btn { width: 100%; justify-content: center; } .header { flex-direction: column; text-align: center; } .file-grid { grid-template-columns: 1fr; } .active-item .main-info { flex-direction: column; align-items: flex-start; } }
+        
+        /* Console */
+        .console-box { background: rgba(0,0,0,0.5); border: 1px solid rgba(255,255,255,0.05); border-radius: 10px; height: 200px; padding: 12px; font-family: 'Courier New', monospace; font-size: 0.7rem; color: #00ffcc; overflow-y: auto; }
+        .console-box .line { opacity: 0; animation: fadeLine 0.3s forwards; border-bottom: 1px solid rgba(255,255,255,0.03); padding: 2px 0; }
+        @keyframes fadeLine { to { opacity: 1; } }
+        .console-success { color: #00ffcc; }
+        .console-error { color: #ff3366; }
+        .console-warning { color: #ffaa00; }
+        .console-info { color: #4facfe; }
+        
+        /* Toast */
+        .toast { position: fixed; bottom: 20px; right: 20px; background: rgba(0,0,0,0.9); padding: 12px 20px; border-radius: 8px; z-index: 999; color:#fff; display:flex; align-items:center; gap:8px; border:1px solid rgba(255,255,255,0.1); animation: slideIn 0.3s cubic-bezier(0.175,0.885,0.32,1.275); }
+        .toast.success { border-color: #00b09b; }
+        .toast.error { border-color: #ff0844; }
+        @keyframes slideIn { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+        
+        .status-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; margin-right: 5px; }
+        .status-dot.online { background: #00ffcc; animation: pulse 1s infinite; }
+        @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
+        
+        .footer { text-align: center; color: rgba(255,255,255,0.15); font-size: 0.7rem; margin-top: 25px; padding-top: 15px; border-top: 1px solid rgba(255,255,255,0.03); }
+        .refresh-status-text { font-size: 0.7rem; color: rgba(255,255,255,0.4); margin-top: 8px; padding: 8px 12px; background: rgba(0,0,0,0.3); border-radius: 6px; border-left: 3px solid #00d4ff; }
+        .reset-info { font-size: 0.7rem; color: rgba(255,255,255,0.3); margin-top: 5px; }
+        .account-item { background: rgba(30,30,40,0.4); padding: 3px 10px; margin: 3px 4px; border-radius: 6px; font-family: monospace; font-size: 10px; color: #4facfe; display: inline-block; }
+        
+        @media (max-width: 768px) { 
+            .controls-grid { grid-template-columns: 1fr; } 
+            .input-group { flex-direction: column; } 
+            .btn { width: 100%; justify-content: center; } 
+            .header { flex-direction: column; text-align: center; } 
+            .file-grid { grid-template-columns: 1fr; } 
+            .active-item .main-info { flex-direction: column; align-items: flex-start; } 
+            .modal-box { max-width: 100%; margin: 10px; }
+        }
     </style>
 </head>
 <body>
     <canvas id="matrix-canvas"></canvas>
     <div class="container">
+        <!-- HEADER -->
         <div class="header">
             <div>
                 <div class="logo"><i class="fas fa-bolt"></i> MAHIR SYSTEM</div>
                 <div style="color: rgba(255,255,255,0.3); font-size:0.8rem;">
-                    SPAM CONTROL ENGINE v3.3
+                    SPAM CONTROL ENGINE v3.5
                     <span class="feature-badge"><i class="fas fa-sync"></i> Auto Status Check (5s)</span>
                     <span class="feature-badge"><i class="fas fa-users"></i> Squad Auto-Join (2h)</span>
-                    <span class="feature-badge"><i class="fas fa-layer-group"></i> ROOM+GROUP</span>
-                    <span class="feature-badge"><i class="fas fa-file"></i> File Manager</span>
-                    <span class="feature-badge"><i class="fas fa-info-circle"></i> Added By & Reason</span>
+                    <span class="feature-badge"><i class="fas fa-folder-open"></i> File Manager</span>
                 </div>
             </div>
             <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
@@ -3500,6 +3607,7 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
             </div>
         </div>
 
+        <!-- STATS -->
         <div class="stats-grid">
             <div class="stat-card"><i class="fas fa-bullseye"></i><h3>ACTIVE TARGETS</h3><div class="value" id="activeCount">0</div></div>
             <div class="stat-card"><i class="fas fa-robot"></i><h3>BOT ACCOUNTS</h3><div class="value" id="botCount">0</div></div>
@@ -3507,6 +3615,7 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
             <div class="stat-card"><i class="fas fa-file-alt"></i><h3>ACCOUNTS IN FILE</h3><div class="value" id="fileAccCount">0</div></div>
         </div>
 
+        <!-- UPLOAD ACCOUNTS + RESET -->
         <div class="controls-grid">
             <div class="control-card">
                 <h3><i class="fas fa-upload" style="color:#ff007f;"></i> UPLOAD ACCOUNTS</h3>
@@ -3525,54 +3634,16 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
             </div>
         </div>
 
-        <!-- FILE MANAGER -->
+        <!-- ===== FILE MANAGER ===== -->
         <div class="control-card" style="margin-bottom:20px; border: 1px solid rgba(255,215,0,0.1);">
-            <h3><i class="fas fa-folder-open" style="color:#ffd700;"></i> FILE MANAGER</h3>
-            <div class="file-grid">
-                <!-- target.txt -->
-                <div class="file-btn" onclick="downloadFile('targets')">
-                    <i class="fas fa-download"></i>
-                    <div class="name">target.txt</div>
-                    <div class="sub">Download</div>
-                </div>
-                <div class="file-btn" onclick="document.getElementById('targetsFileInput').click()">
-                    <i class="fas fa-upload"></i>
-                    <div class="name">target.txt</div>
-                    <div class="sub">Upload</div>
-                    <input type="file" id="targetsFileInput" accept=".txt" style="display:none;" onchange="uploadFile('targets', this)">
-                </div>
-
-                <!-- master_acc.txt (New) -->
-                <div class="file-btn" onclick="downloadFile('master')">
-                    <i class="fas fa-file-export" style="color: #00ffcc;"></i>
-                    <div class="name">master_acc.txt</div>
-                    <div class="sub">Download ID/PW</div>
-                </div>
-                <div class="file-btn" onclick="document.getElementById('masterFileInput').click()" style="border-color: #00ffcc;">
-                    <i class="fas fa-key" style="color: #00ffcc;"></i>
-                    <div class="name">master_acc.txt</div>
-                    <div class="sub">Upload Admin Info</div>
-                    <input type="file" id="masterFileInput" accept=".txt" style="display:none;" onchange="uploadMasterFile(this)">
-                </div>
-
-                <!-- squad_data.json -->
-                <div class="file-btn" onclick="downloadFile('squad_data')">
-                    <i class="fas fa-download"></i>
-                    <div class="name">squad_data.json</div>
-                    <div class="sub">Download</div>
-                </div>
-                <div class="file-btn" onclick="document.getElementById('squadDataFileInput').click()">
-                    <i class="fas fa-upload"></i>
-                    <div class="name">squad_data.json</div>
-                    <div class="sub">Upload</div>
-                    <input type="file" id="squadDataFileInput" accept=".json" style="display:none;" onchange="uploadFile('squad_data', this)">
-                </div>
-
-                <!-- accs.txt -->
-                <div class="file-btn" onclick="downloadFile('accs')">
-                    <i class="fas fa-download"></i>
-                    <div class="name">accs.txt</div>
-                    <div class="sub">Download</div>
+            <div class="file-manager-toggle" style="display:flex; justify-content:space-between; align-items:center; cursor:pointer;" onclick="toggleFileManager()">
+                <h3 style="margin:0;"><i class="fas fa-folder-open" style="color:#ffd700;"></i> FILE MANAGER</h3>
+                <span id="fileManagerArrow" style="color:rgba(255,255,255,0.3); transition:0.3s;"><i class="fas fa-chevron-down"></i></span>
+            </div>
+            <div class="file-manager-content" id="fileManagerContent">
+                <div class="file-grid" id="fileGrid">
+                    <!-- Files will be loaded here -->
+                    <div style="color:rgba(255,255,255,0.3); text-align:center; padding:20px; width:100%;">Loading files...</div>
                 </div>
             </div>
         </div>
@@ -3593,6 +3664,7 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
             </div>
         </div>
 
+        <!-- START / STOP SPAM -->
         <div class="controls-grid">
             <div class="control-card">
                 <h3><i class="fas fa-fire" style="color:#ff007f;"></i> START SPAM</h3>
@@ -3638,6 +3710,7 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
             </div>
         </div>
 
+        <!-- ACTIVE TARGETS -->
         <div class="control-card" style="margin-bottom:20px;">
             <h3><i class="fas fa-list"></i> ACTIVE TARGETS <span style="font-size:0.6rem; color:rgba(255,255,255,0.3);">(Status auto-check every 5s)</span></h3>
             <div id="activeList" class="active-list">
@@ -3645,16 +3718,18 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
             </div>
         </div>
 
+        <!-- CONSOLE -->
         <div class="control-card" style="margin-bottom:20px;">
             <h3><i class="fas fa-terminal"></i> LIVE CONSOLE</h3>
             <div class="console-box" id="consoleBox">
-                <div class="line"><span style="color:rgba(255,255,255,0.3);">[System]</span> <span class="console-success">MAHIR SPAM ENGINE v3.3 Initialized</span></div>
-                <div class="line"><span style="color:rgba(255,255,255,0.3);">[System]</span> <span class="console-info">Added By & Reason tracking enabled</span></div>
+                <div class="line"><span style="color:rgba(255,255,255,0.3);">[System]</span> <span class="console-success">MAHIR SPAM ENGINE v3.5 Initialized</span></div>
+                <div class="line"><span style="color:rgba(255,255,255,0.3);">[System]</span> <span class="console-info">File Manager with Edit/Download/Upload enabled</span></div>
                 <div class="line"><span style="color:rgba(255,255,255,0.3);">[System]</span> <span class="console-info">Status check every 5 seconds</span></div>
                 <div class="line"><span style="color:rgba(255,255,255,0.3);">[System]</span> <span class="console-info">Squad auto-join enabled (2 hours duration)</span></div>
             </div>
         </div>
 
+        <!-- ACCOUNTS -->
         <div class="control-card">
             <h3><i class="fas fa-robot"></i> CONNECTED ACCOUNTS</h3>
             <div id="accountsContainer">
@@ -3662,10 +3737,28 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
             </div>
         </div>
 
-        <div class="footer">MAHIR SYSTEM v3.3 | <i class="fas fa-code"></i> Engine by MAHIR | Added By & Reason Tracking | Status Check: 5s | Squad Auto-Join: 2hours</div>
+        <div class="footer">MAHIR SYSTEM v3.5 | <i class="fas fa-code"></i> Engine by MAHIR | File Manager v2.0 | Status Check: 5s | Squad Auto-Join: 2h</div>
+    </div>
+
+    <!-- ===== EDIT MODAL ===== -->
+    <div class="modal-overlay" id="editModal">
+        <div class="modal-box">
+            <div class="modal-header">
+                <h3><i class="fas fa-edit"></i> <span id="editModalTitle">Edit File</span></h3>
+                <button class="modal-close" onclick="closeEditModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <textarea id="editTextarea" spellcheck="false"></textarea>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-outline" onclick="closeEditModal()">Cancel</button>
+                <button class="btn btn-success" onclick="saveEditedFile()"><i class="fas fa-save"></i> Save</button>
+            </div>
+        </div>
     </div>
 
     <script>
+        // ===== MATRIX BACKGROUND =====
         const canvas = document.getElementById('matrix-canvas'); const ctx = canvas.getContext('2d');
         canvas.width = window.innerWidth; canvas.height = window.innerHeight;
         const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789@#$%&'.split('');
@@ -3683,6 +3776,7 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
         }
         setInterval(drawMatrix, 50);
 
+        // ===== TOAST =====
         function showToast(msg, type='info') {
             const t = document.createElement('div');
             t.className = `toast ${type}`;
@@ -3691,6 +3785,209 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
             document.body.appendChild(t);
             setTimeout(() => t.remove(), 4000);
         }
+
+        // ===== FILE MANAGER =====
+        let fileManagerOpen = false;
+
+        function toggleFileManager() {
+            fileManagerOpen = !fileManagerOpen;
+            const content = document.getElementById('fileManagerContent');
+            const arrow = document.getElementById('fileManagerArrow');
+            if (fileManagerOpen) {
+                content.classList.add('open');
+                arrow.innerHTML = '<i class="fas fa-chevron-up"></i>';
+                loadFiles();
+            } else {
+                content.classList.remove('open');
+                arrow.innerHTML = '<i class="fas fa-chevron-down"></i>';
+            }
+        }
+
+        const FILES = [
+            { name: 'accs.txt', desc: 'Account list (UID:PASSWORD)', icon: 'fa-users' },
+            { name: 'target.txt', desc: 'Target UIDs list', icon: 'fa-crosshairs' },
+            { name: 'squad_data.json', desc: 'Squad leader tracking data', icon: 'fa-crown' }
+        ];
+
+        function loadFiles() {
+            const grid = document.getElementById('fileGrid');
+            grid.innerHTML = FILES.map(f => `
+                <div class="file-card">
+                    <div class="file-header">
+                        <div class="file-name">
+                            <i class="fas ${f.icon}" style="color:#ffd700;"></i>
+                            ${f.name}
+                            <span class="ext">${f.name.split('.').pop()}</span>
+                        </div>
+                        <div class="file-actions">
+                            <button class="btn btn-edit" onclick="editFile('${f.name}')"><i class="fas fa-edit"></i> Edit</button>
+                            <button class="btn btn-download" onclick="downloadFile('${f.name}')"><i class="fas fa-download"></i></button>
+                            <button class="btn btn-upload" onclick="document.getElementById('upload_${f.name.replace('.','_')}').click()"><i class="fas fa-upload"></i></button>
+                            <input type="file" id="upload_${f.name.replace('.','_')}" onchange="uploadFile('${f.name}', this)" accept="${f.name.endsWith('.json') ? '.json' : '.txt'}">
+                        </div>
+                    </div>
+                    <div class="file-desc">${f.desc}</div>
+                    <div class="file-size" id="size_${f.name.replace('.','_')}">Loading size...</div>
+                </div>
+            `).join('');
+            // Load file sizes
+            FILES.forEach(f => {
+                const urlMap = {
+                    'accs.txt': '/api/get/accs',
+                    'target.txt': '/api/download/targets',
+                    'squad_data.json': '/api/download/squad_data'
+                };
+                const url = urlMap[f.name];
+                if (url) {
+                    fetch(url)
+                        .then(r => {
+                            if (r.ok) {
+                                const size = r.headers.get('content-length') || '?';
+                                document.getElementById(`size_${f.name.replace('.','_')}`).textContent = 
+                                    size === '?' ? 'Size: unknown' : `Size: ${(parseInt(size)/1024).toFixed(1)} KB`;
+                            } else {
+                                document.getElementById(`size_${f.name.replace('.','_')}`).textContent = 'File not found';
+                            }
+                        })
+                        .catch(() => {
+                            document.getElementById(`size_${f.name.replace('.','_')}`).textContent = 'Error loading';
+                        });
+                }
+            });
+        }
+
+        // ===== DOWNLOAD =====
+        function downloadFile(name) {
+            const map = {
+                'accs.txt': '/api/get/accs',
+                'target.txt': '/api/download/targets',
+                'squad_data.json': '/api/download/squad_data'
+            };
+            const url = map[name];
+            if (url) {
+                window.location.href = url;
+                showToast(`Downloading ${name}...`, 'info');
+            } else {
+                showToast('Unknown file', 'error');
+            }
+        }
+
+        // ===== UPLOAD =====
+        function uploadFile(name, input) {
+            const file = input.files[0];
+            if (!file) return;
+            
+            const map = {
+                'accs.txt': '/api/upload/accs',
+                'target.txt': '/api/upload/targets',
+                'squad_data.json': '/api/upload/squad_data'
+            };
+            const url = map[name];
+            if (!url) { showToast('Unknown file', 'error'); return; }
+            
+            const fd = new FormData();
+            fd.append('file', file);
+            showToast(`Uploading ${name}...`, 'info');
+            
+            fetch(url, { method: 'POST', body: fd })
+                .then(r => r.json())
+                .then(d => {
+                    if (d.success) {
+                        showToast(`${d.message}`, 'success');
+                        refreshStatus();
+                        refreshSquadLeaders();
+                        loadFiles(); // reload file list
+                        if (name === 'accs.txt') {
+                            setTimeout(() => location.reload(), 2000);
+                        }
+                    } else {
+                        showToast(`Upload failed: ${d.message}`, 'error');
+                    }
+                })
+                .catch(() => showToast('Upload failed', 'error'));
+            input.value = '';
+        }
+
+        // ===== EDIT FILE =====
+        let editingFile = null;
+        let editContent = '';
+
+        function editFile(name) {
+            editingFile = name;
+            const map = {
+                'accs.txt': '/api/get/accs',
+                'target.txt': '/api/download/targets',
+                'squad_data.json': '/api/download/squad_data'
+            };
+            const url = map[name];
+            if (!url) { showToast('Cannot edit this file', 'error'); return; }
+            
+            document.getElementById('editModalTitle').textContent = `✏️ Editing: ${name}`;
+            document.getElementById('editTextarea').value = 'Loading...';
+            document.getElementById('editModal').classList.add('active');
+            
+            fetch(url)
+                .then(r => {
+                    if (!r.ok) throw new Error('Failed to load');
+                    return r.text();
+                })
+                .then(text => {
+                    document.getElementById('editTextarea').value = text;
+                    editContent = text;
+                })
+                .catch(() => {
+                    document.getElementById('editTextarea').value = 'Error loading file content.';
+                });
+        }
+
+        function closeEditModal() {
+            document.getElementById('editModal').classList.remove('active');
+            editingFile = null;
+        }
+
+        function saveEditedFile() {
+            if (!editingFile) return;
+            const content = document.getElementById('editTextarea').value;
+            
+            // Create a Blob and upload
+            const blob = new Blob([content], { type: 'text/plain' });
+            const file = new File([blob], editingFile);
+            const fd = new FormData();
+            fd.append('file', file);
+            
+            const map = {
+                'accs.txt': '/api/upload/accs',
+                'target.txt': '/api/upload/targets',
+                'squad_data.json': '/api/upload/squad_data'
+            };
+            const url = map[editingFile];
+            if (!url) { showToast('Cannot save this file', 'error'); return; }
+            
+            showToast(`Saving ${editingFile}...`, 'info');
+            
+            fetch(url, { method: 'POST', body: fd })
+                .then(r => r.json())
+                .then(d => {
+                    if (d.success) {
+                        showToast(`✅ ${d.message}`, 'success');
+                        closeEditModal();
+                        refreshStatus();
+                        refreshSquadLeaders();
+                        loadFiles();
+                    } else {
+                        showToast(`❌ Save failed: ${d.message}`, 'error');
+                    }
+                })
+                .catch(() => showToast('Save failed', 'error'));
+        }
+
+        // Close modal on ESC
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') closeEditModal();
+        });
+        document.getElementById('editModal').addEventListener('click', (e) => {
+            if (e.target === e.currentTarget) closeEditModal();
+        });
 
         // ===== REFRESH FUNCTIONS =====
         function refreshAllStatus() {
@@ -3791,57 +4088,6 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
             });
         }
 
-        // ===== FILE MANAGEMENT =====
-        function downloadFile(type) {
-            const urls = { 'targets': '/api/download/targets', 'squad_data': '/api/download/squad_data', 'accs': '/api/get/accs' };
-            const names = { 'targets': 'target.txt', 'squad_data': 'squad_data.json', 'accs': 'accs.txt' };
-            if (urls[type]) {
-                window.location.href = urls[type];
-                showToast(`Downloading ${names[type]}...`, 'info');
-            }
-        }
-
-        function uploadFile(type, input) {
-            const file = input.files[0];
-            if (!file) return;
-            
-            const urls = { 
-                'targets': '/api/upload/targets', 
-                'squad_data': '/api/upload/squad_data',
-                'master': '/api/upload/master' // master_acc.txt এর জন্য URL
-            };
-            const names = { 
-                'targets': 'target.txt', 
-                'squad_data': 'squad_data.json',
-                'master': 'master_acc.txt' // master_acc.txt এর নাম
-            };
-            
-            if (!urls[type]) return;
-            
-            const fd = new FormData();
-            fd.append('file', file);
-            showToast(`Uploading ${names[type]}...`, 'info');
-            
-            fetch(urls[type], { method: 'POST', body: fd })
-                .then(r => r.json())
-                .then(d => {
-                    if (d.success) {
-                        showToast(`${d.message}`, 'success');
-                        refreshStatus();
-                        refreshSquadLeaders();
-                        
-                        // যদি মাস্টার একাউন্ট আপলোড হয়, তবে ২ সেকেন্ড পর পেজ রিলোড হবে
-                        if (type === 'master') {
-                            setTimeout(() => location.reload(), 2000);
-                        }
-                    } else {
-                        showToast(`Upload failed: ${d.message}`, 'error');
-                    }
-                })
-                .catch(() => showToast('Upload failed', 'error'));
-            input.value = '';
-        }
-
         // ===== SQUAD LEADER FUNCTIONS =====
         function refreshSquadLeaders() {
             const list = document.getElementById('squadLeaderList');
@@ -3932,6 +4178,7 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
                 .catch(() => showToast('❌ Failed to remove', 'error'));
         }
 
+        // ===== RESET ACCOUNTS =====
         function resetAccounts() {
             if (!confirm('⚠️ Reset all accounts? This will disconnect and reconnect all bots.')) return;
             showToast('Resetting accounts...', 'info');
@@ -3948,18 +4195,19 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
                 .catch(() => showToast('Error resetting accounts', 'error'));
         }
 
+        // ===== ACCOUNT COUNT =====
         function getAccountCount() {
             fetch('/api/accounts/count')
                 .then(r => r.json())
                 .then(d => {
                     if (d.success) {
                         document.getElementById('fileAccCount').textContent = d.total;
-                        document.getElementById('accCount').textContent = `${d.total} accounts (Group: ${d.group}, Room: ${d.room})`;
                     }
                 })
                 .catch(() => {});
         }
 
+        // ===== UPLOAD ACCOUNTS (OLD) =====
         function uploadFileOld(file) {
             const fd = new FormData(); fd.append('file', file);
             fetch('/api/upload/accs', { method: 'POST', body: fd })
@@ -3970,6 +4218,7 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
                         showToast(d.message, 'success');
                         refreshStatus();
                         getAccountCount();
+                        loadFiles();
                     } else showToast(d.message, 'error');
                 }).catch(() => showToast('Upload failed', 'error'));
         }
@@ -3982,6 +4231,7 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
         uploadEl.addEventListener('dragleave', () => uploadEl.classList.remove('dragover'));
         uploadEl.addEventListener('drop', e => { e.preventDefault(); uploadEl.classList.remove('dragover'); const files = e.dataTransfer.files; if (files.length) uploadFileOld(files[0]); });
 
+        // ===== START / STOP SPAM =====
         function startSpam() {
             const uid = document.getElementById('spamUid').value.trim();
             const addedBy = document.getElementById('spamAddedBy').value.trim() || 'MAHIR';
@@ -4018,15 +4268,16 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
         }
 
         function stopAllSpam() { if (!confirm('⚠️ Stop all spam?')) return; fetch('/api/stop-all').then(r => r.json()).then(d => { if (d.success) { showToast(d.message, 'success'); refreshStatus(); } }).catch(() => showToast('Error', 'error')); }
-        function downloadAccs() { window.location.href = '/api/get/accs'; }
         function quickStop(uid) { document.getElementById('stopUid').value = uid; stopSingleSpam(); }
 
+        // ===== STATUS LABELS =====
         function getStatusLabel(status) {
             const labels = { 'SOLO': '🟢 Solo', 'INSQUAD': '🔵 In Squad', 'INGAME': '🟡 In Game', 'IN_ROOM': '🟠 In Room', 'OFFLINE': '⚪ Offline', 'SOCIAL_ISLAND': '🟣 Social Island', 'MATCHMAKING': '🟣 Matchmaking', 'UNKNOWN': '⚪ Unknown' };
             return labels[status] || '⚪ Unknown';
         }
         function getStatusClass(status) { const map = { 'SOLO': 'solo', 'INSQUAD': 'insquad', 'INGAME': 'ingame', 'IN_ROOM': 'in_room', 'OFFLINE': 'offline' }; return map[status] || 'unknown'; }
 
+        // ===== REFRESH STATUS =====
         function refreshStatus() {
             fetch('/api/status?pass=MAHIRJOD')
                 .then(r => r.json())
@@ -4075,11 +4326,12 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
             getAccountCount();
         }
 
-        // Initial refresh
+        // ===== INIT =====
         setInterval(refreshStatus, 5000);
         refreshStatus();
         refreshSquadLeaders();
         
+        // Keyboard shortcuts
         document.getElementById('spamUid').addEventListener('keypress', e => { if (e.key === 'Enter') startSpam(); });
         document.getElementById('stopUid').addEventListener('keypress', e => { if (e.key === 'Enter') stopSingleSpam(); });
         document.getElementById('refreshSingleUid').addEventListener('keypress', e => {
