@@ -12,6 +12,7 @@ from Crypto.Util.Padding import pad, unpad
 from google.protobuf.timestamp_pb2 import Timestamp
 from google_play_scraper import app as play_store_info 
 import aiohttp
+import uuid
 
 from xC4 import *
 
@@ -237,22 +238,60 @@ async def encrypted_proto(data_bytes):
 async def EncRypTMajoRLoGin(open_id, access_token, version):
     major_login = MajoRLoGinrEq_pb2.MajorLogin()
     
+    # বর্তমান সময় অনুযায়ী লগইন টাইম
     major_login.event_time = str(datetime.now())[:-7]
     major_login.game_name = "free fire"
-    major_login.platform_id = 2
-    major_login.client_version = FREEFIRE_VERSION_NAME
-    major_login.system_software = "Android OS 15 / API-35 (AP3A.240617.008/T.R4T2.230617d-33f5e)"
-    major_login.system_hardware = "Handheld"
-    major_login.telecom_operator = "Robi"
-    major_login.network_type = "WIFI"
-    major_login.screen_width = 1666
-    major_login.screen_height = 750
-    major_login.screen_dpi = "314"
-    major_login.processor_details = "ARM64 FP ASIMD AES | 2000 | 8"
-    major_login.memory = 7723
-    major_login.gpu_renderer = "Mali-G52 MC2"
-    major_login.gpu_version = "OpenGL ES 3.2 v1.r49p1-03bet0.19498e0ae1d5dac223383c39a2e58f04"
-    major_login.unique_device_id = "Google|9683cec2-b6fc-424c-aa18-d32bc0e0af87"
+    
+    # --- র‍্যান্ডম ইমুলেটর প্রোফাইল ডাটা ---
+    emulators = [
+        {"name": "BlueStacks 5", "software": "Android OS 9 / API-28 (x86_64/BlueStacks)"},
+        {"name": "LDPlayer 9", "software": "Android OS 11 / API-30 (x86_64/LDPlayer)"},
+        {"name": "MSI App Player", "software": "Android OS 9 / API-28 (x86_64/MSI)"},
+        {"name": "NoxPlayer", "software": "Android OS 7 / API-25 (x86/Nox)"}
+    ]
+    
+    # --- র‍্যান্ডম পিসি হার্ডওয়্যার ডাটা ---
+    pc_hardware = [
+        {"cpu": "Intel(R) Core(TM) i7-10700K CPU @ 3.80GHz", "gpu": "NVIDIA GeForce RTX 3060"},
+        {"cpu": "AMD Ryzen 7 5800X 8-Core Processor", "gpu": "AMD Radeon RX 6700 XT"},
+        {"cpu": "Intel(R) Core(TM) i5-12400F CPU @ 2.50GHz", "gpu": "NVIDIA GeForce GTX 1660 SUPER"},
+        {"cpu": "Intel(R) Core(TM) i9-12900K CPU @ 3.20GHz", "gpu": "NVIDIA GeForce RTX 3080"}
+    ]
+    
+    selected_emu = random.choice(emulators)
+    selected_pc = random.choice(pc_hardware)
+    
+    # --- EMULATOR মূল কনফিগারেশন ---
+    major_login.platform_id = 1             # 2 এর বদলে 1
+    major_login.platform_sdk_id = 1         
+    major_login.device_type = "Emulator"    
+    major_login.system_hardware = "x86_64" 
+    major_login.system_software = selected_emu["software"]
+    
+    major_login.client_version = version 
+    major_login.client_version_code = "2019120828" 
+    
+    # --- নেটওয়ার্ক (ইমুলেটর সাধারণত WIFI হিসেবে দেখায়) ---
+    major_login.telecom_operator = "WIFI"      
+    major_login.network_operator_a = "00000"   
+    major_login.network_type = "WIFI"          
+    major_login.network_type_a = "WIFI"        
+    
+    # --- স্ক্রিন রেজোলিউশন ---
+    major_login.screen_width = 1920
+    major_login.screen_height = 1080
+    major_login.screen_dpi = "320"
+    
+    # --- হার্ডওয়্যার ডিটেইলস ---
+    major_login.processor_details = selected_pc["cpu"]
+    major_login.memory = random.choice([4096, 8192, 16384]) # ৪, ৮ বা ১৬ জিবি র‍্যাম
+    major_login.gpu_renderer = selected_pc["gpu"]
+    major_login.gpu_version = "OpenGL ES 3.2"
+    major_login.graphics_api = "OpenGLES3" 
+    
+    # --- ইউনিক ডিভাইস আইডি (র‍্যান্ডম জেনারেটেড) ---
+    unique_id = str(uuid.uuid4()).upper()
+    major_login.unique_device_id = f"{selected_emu['name'].split()[0]}|{unique_id}" 
     
     major_login.language = "en"
     major_login.open_id = open_id
@@ -260,42 +299,33 @@ async def EncRypTMajoRLoGin(open_id, access_token, version):
     major_login.login_open_id_type = 4
     major_login.access_token = access_token
     major_login.login_by = 3
-    major_login.device_type = "Handheld"
-    
-    major_login.platform_sdk_id = 2
     major_login.origin_platform_type = "4"
     major_login.primary_platform_type = "4"
     
-    major_login.network_operator_a = "Robi"
-    major_login.network_type_a = "WIFI"
-
-    major_login.memory_available.version = 55
-    major_login.memory_available.hidden_value = 81
+    memory_available = major_login.memory_available
+    memory_available.version = 55
+    memory_available.hidden_value = random.randint(80, 98)
     
-    major_login.external_storage_total = 225554
-    major_login.external_storage_available = 77192
-    major_login.internal_storage_total = 225554
-    major_login.internal_storage_available = 77716
-    major_login.game_disk_storage_total = 225554
-    major_login.game_disk_storage_available = 77716
+    # --- স্টোরেজ ডাটা ---
+    major_login.external_storage_total = 256000 
+    major_login.external_storage_available = random.randint(50000, 150000)
+    major_login.internal_storage_total = 256000
+    major_login.internal_storage_available = random.randint(40000, 100000)
     
-    major_login.library_path = "/data/app/~~eI6I6W4wOsVjxgnf1TGOiw==/com.dts.freefireth-E-hRAzA1WRAwmVJah_awUQ==/lib/arm64"
-    major_login.library_token = "4c322aeb56444feaa151d1ea91a8f7f2|/data/app/~~eI6I6W4wOsVjxgnf1TGOiw==/com.dts.freefireth-E-hRAzA1WRAwmVJah_awUQ==/base.apk"
+    major_login.library_path = f"/data/app/com.dts.freefireth/lib/{selected_emu['name'].lower()}"
+    major_login.library_token = f"emu_token_{uuid.uuid4().hex[:16]}"
     
     major_login.client_using_version = "7428b253defc164018c604a1ebbfebdf"
-    major_login.supported_astc_bitset = 8191
+    major_login.supported_astc_bitset = 16383
+    major_login.analytics_detail = b"FwQVTgUPX1UaUllDDwcWCRBpWAUOUgsvA1snWlBaO1kFYg=="
+    major_login.loading_time = random.randint(1500, 4000) 
     
-    major_login.analytics_detail = b"KqsHT20lrgH2VZSZVBrjiMQlH1D4ByEnCuAp9O88Z77L10j7f3Nyn/PzA3fYYKorO4qAlimdHPTie8ttBgw98SG36+U=" 
-    
-    major_login.loading_time = 111207
-    major_login.release_channel = "android"
+    major_login.release_channel = "official"
     major_login.if_push = 1
     major_login.is_vpn = 0
-    major_login.cpu_type = 2
-    major_login.cpu_architecture = "64"
-    major_login.client_version_code = "2019120828"
-    major_login.graphics_api = "OpenGLES2"
-    major_login.android_engine_init_flag = 1003114253
+    major_login.cpu_type = 1                # x86
+    major_login.cpu_architecture = "x86_64"
+    major_login.android_engine_init_flag = 110009
 
     serialized_data = major_login.SerializeToString()
     return await encrypted_proto(serialized_data)
@@ -744,25 +774,46 @@ def create_squad_invite_packet(key, iv, target_uid, region="BD"):
 def create_open_squad_packet(key, iv, region="BD"):
     try:
         fields = {
-            1: 1,
-            2: {
-                2: "\u0001",
-                3: 2,
-                4: 1,
-                5: "en",
-                9: 1,
-                11: 1,
-                13: 1,
-                14: {
-                    1: 1,
-                    2: 1393,
-                    6: 11,
-                    8: FREEFIRE_VERSION_NAME,
-                    9: 2,
-                    10: 4
+        1: 1,
+        2: {
+            2: "\u0001",
+            3: 43,
+            4: 1,
+            5: "en",
+            8: [
+                {
+                    1: "IDC2",
+                    2: 171,
+                    3: "BD"
                 }
-            }
+            ],
+            9: 1,
+            10: "rYUW\u0017\t\u0007NR\u000f\u0005\u0004\\W\u0002\u000fV\u0004TPQ\u0003\u000f\u0005\u0004]\u0005\u000b\u0000\u0002W\u0005\r\nVY\u0004\u0007\u0007\u0007\u0017\u0001\bNQ\fS\u0005\u000e\u0006\f\u0005\rT\u0002\r\u0000TS\u0007U\u0004X\u0006RY\u0005\u0003\u0003SW\u0000\u000eQ\u0000^\u0014\u0003\u0004JXS\u000f\u0000g{gqfePblEZJp{_xU\bmQW\f\u0007\u000f\u0015\u0007H\\U^CHXh@Ax`\u000f~\rPN~Nz\\\u001fr_ckPU\u000b\u0015\u0005\u0003Ekfp\u007fcY\u0001nWV\u0002\u0005azE~N\u0007HTg\u0007w}@\u0002{\t\u0013\u0001NeNP]DUf|]ugINs{\u0001\\rAgB_\u0004fA]\u0004\r\u001a\u0000HpOv\\\u0005|gS\u0019\\A\u007fWW\u0003\u007fTqFGi\u0004Qr\u0019dW\u0004\u0011\rD\u0002yeZ]A\u0016a\u0007Ungeg\u0007E\\P\u001b\u000b\u0004\u0005dd\ff\r\u000f\u0017\t\u000fNRyZd\u0012tZ\fe\u0007AGv\u007fw]{P\u001c\u007f\u000ff\u0005ZJK\u0004\u0005\u0014\u0001Jgq\u001frymsB\u0001\u000fd`\u001bj~[}\u0004SDZ|IxKB\u0000\n\u0011\u0002J^`tjYN\u0007WQdE[PQ\u0002_{VP`S\t\u007f\u001dP\n\u000f\u000f\u0015\u0004\u0004L{V\u0003@yP[rgJ{Hpk\u0001\u000bw\u0001Agt_\u0003HxPc\u000b\u0017\u0005E`y\ngWoy\u0006S{A\u001b``Y\u0002Xzw}dDWOKsg\t\u0013\u000eNf\u000e\\`\u0005AwJc\u0003BM\u0001^\u0000R\u0002Qoh]tbS~`G\r\u001a\u0004HibAQ\u000f^XNt~kDUWaeaNqcLQ]Py[G\u0004",
+            11: 1,
+            13: 1,
+            14: {
+                1: "08FAA33B035B3F16020859055555000200030001000000004AFA7572105C674946762514220104186fa2e8770e748c3f6a68ed75000000ff18470f0bcacfa16d",
+                2: 681,
+                3: {
+                    14: {
+                        11: "1106064f50055401030f03020403060155070d01540e060e020607540706030354530f041003064d715c46434b1f061f031e1205034a1c40677c5f554775755f504e677446185b584901534144685b67620f",
+                        0: 72
+                    }
+                },
+                4: "x\\\\R",
+                6: 13,
+                7: {2: 80},
+                8: FREEFIRE_VERSION_NAME,
+                9: 2,
+                10: 1,
+                11: "03626253513677542b504e4635416456324b796f566c576a326567507844414c33507138513031762b66536c626a587648434e3348414e376c472b72474637794165676e72436b553671626b694538706f534e5a582b2f7a44675a547475465650542b384d69565a507151312b444b53576f786f6d592f7156394f76755254482b7154486a78486f664169734267564970454d454e6b4c326a4763445a4a5176416d687947356b7669564e544d71515745754b32324d4e384e4931424d437445395532415156694b667948314574412b32644536464b53773132554155596363372b7753652b66676c393742756544446a58496d6e35666d45444a51535948326644484c5650676755472f51794b776e77545151324a505265352f72314830616d374264424f556b712f523246734d635475516d47364c684a547a4379345774444245795268305754366f68532f785a48736a4c7a4366506378372f386a534133352b67787642657450397a4f6f463639344945386e6e77336b507344357a6e6337593649776b4142435761776f6d572b6948594f5939686d647632706975584168416d6d6a74496f5945444c6e506e5738616f7153304f74486b732f5a3953543252447345507a3343655438774e6874756d57634b4438585445376649386c305173726a772f4a57514f76394b50307257644538593375422f2b495836757675452b487a6a4853466c75726f33515432536567595758535854714674495a61454d476c51314b7639666c59525539465047366c30663045314f7a2b2b36324339644b664c4d39315a782f6f625938726a6e682b77524a3962636e544e41715466486f72354b714d3d"
+            },
+            19: 329,
+            21: "374f5219",
+            24: {1: 21},
+            27: "a_6534489873065906362"
         }
+    }
         packet = create_proto_sync(fields).hex()
         encrypted = EnC_PacKeT(packet, key, iv)
         length = len(encrypted) // 2
@@ -1366,7 +1417,6 @@ class FF_CLient():
 
     def ToKen_GeneRaTe(self, access_token, open_id):
         url = f"{DYNAMIC_SERVER_URL}/MajorLogin"
-        
         dynamic_host = DYNAMIC_SERVER_URL.split("//")[-1].split("/")[0]
 
         headers = {
@@ -1379,68 +1429,98 @@ class FF_CLient():
             'Connection': 'Keep-Alive',
             'Accept-Encoding': 'gzip'
         }
+        
         try:
             major_login = MajoRLoGinrEq_pb2.MajorLogin()
-    
+            
+            # বর্তমান সময় অনুযায়ী লগইন টাইম
             major_login.event_time = str(datetime.now())[:-7]
             major_login.game_name = "free fire"
-            major_login.platform_id = 2
-            major_login.client_version = FREEFIRE_VERSION_NAME
-            major_login.system_software = "Android OS 15 / API-35 (AP3A.240617.008/T.R4T2.230617d-33f5e)"
-            major_login.system_hardware = "Handheld"
-            major_login.telecom_operator = "Robi"
-            major_login.network_type = "WIFI"
-            major_login.screen_width = 1666
-            major_login.screen_height = 750
-            major_login.screen_dpi = "314"
-            major_login.processor_details = "ARM64 FP ASIMD AES | 2000 | 8"
-            major_login.memory = 7723
-            major_login.gpu_renderer = "Mali-G52 MC2"
-            major_login.gpu_version = "OpenGL ES 3.2 v1.r49p1-03bet0.19498e0ae1d5dac223383c39a2e58f04"
-            major_login.unique_device_id = "Google|9683cec2-b6fc-424c-aa18-d32bc0e0af87"
-    
+            
+            # --- র‍্যান্ডম ইমুলেটর প্রোফাইল ডাটা ---
+            emulators = [
+                {"name": "BlueStacks 5", "software": "Android OS 9 / API-28 (x86_64/BlueStacks)"},
+                {"name": "LDPlayer 9", "software": "Android OS 11 / API-30 (x86_64/LDPlayer)"},
+                {"name": "MSI App Player", "software": "Android OS 9 / API-28 (x86_64/MSI)"},
+                {"name": "NoxPlayer", "software": "Android OS 7 / API-25 (x86/Nox)"}
+            ]
+            
+            # --- র‍্যান্ডম পিসি হার্ডওয়্যার ডাটা ---
+            pc_hardware = [
+                {"cpu": "Intel(R) Core(TM) i7-10700K CPU @ 3.80GHz", "gpu": "NVIDIA GeForce RTX 3060"},
+                {"cpu": "AMD Ryzen 7 5800X 8-Core Processor", "gpu": "AMD Radeon RX 6700 XT"},
+                {"cpu": "Intel(R) Core(TM) i5-12400F CPU @ 2.50GHz", "gpu": "NVIDIA GeForce GTX 1660 SUPER"},
+                {"cpu": "Intel(R) Core(TM) i9-12900K CPU @ 3.20GHz", "gpu": "NVIDIA GeForce RTX 3080"}
+            ]
+            
+            selected_emu = random.choice(emulators)
+            selected_pc = random.choice(pc_hardware)
+            
+            # --- EMULATOR মূল কনফিগারেশন ---
+            major_login.platform_id = 1             # Emulator Platform
+            major_login.platform_sdk_id = 1         
+            major_login.device_type = "Emulator"    
+            major_login.system_hardware = "x86_64" 
+            major_login.system_software = selected_emu["software"]
+            
+            major_login.client_version = FREEFIRE_VERSION_NAME 
+            major_login.client_version_code = "2019120828" 
+            
+            # --- নেটওয়ার্ক (ইমুলেটর সাধারণত WIFI হিসেবে দেখায়) ---
+            major_login.telecom_operator = "WIFI"      
+            major_login.network_operator_a = "00000"   
+            major_login.network_type = "WIFI"          
+            major_login.network_type_a = "WIFI"        
+            
+            # --- স্ক্রিন রেজোলিউশন ---
+            major_login.screen_width = 1920
+            major_login.screen_height = 1080
+            major_login.screen_dpi = "320"
+            
+            # --- হার্ডওয়্যার ডিটেইলস ---
+            major_login.processor_details = selected_pc["cpu"]
+            major_login.memory = random.choice([4096, 8192, 16384]) 
+            major_login.gpu_renderer = selected_pc["gpu"]
+            major_login.gpu_version = "OpenGL ES 3.2"
+            major_login.graphics_api = "OpenGLES3" 
+            
+            # --- ইউনিক ডিভাইস আইডি ---
+            unique_id = str(uuid.uuid4()).upper()
+            major_login.unique_device_id = f"{selected_emu['name'].split()[0]}|{unique_id}" 
+            
             major_login.language = "en"
             major_login.open_id = open_id
             major_login.open_id_type = "4"
             major_login.login_open_id_type = 4
             major_login.access_token = access_token
             major_login.login_by = 3
-            major_login.device_type = "Handheld"
-    
-            major_login.platform_sdk_id = 2
             major_login.origin_platform_type = "4"
             major_login.primary_platform_type = "4"
-    
-            major_login.network_operator_a = "Robi"
-            major_login.network_type_a = "WIFI"
-
-            major_login.memory_available.version = 55
-            major_login.memory_available.hidden_value = 81
-    
-            major_login.external_storage_total = 225554
-            major_login.external_storage_available = 77192
-            major_login.internal_storage_total = 225554
-            major_login.internal_storage_available = 77716
-            major_login.game_disk_storage_total = 225554
-            major_login.game_disk_storage_available = 77716
-    
-            major_login.library_path = "/data/app/~~eI6I6W4wOsVjxgnf1TGOiw==/com.dts.freefireth-E-hRAzA1WRAwmVJah_awUQ==/lib/arm64"
-            major_login.library_token = "4c322aeb56444feaa151d1ea91a8f7f2|/data/app/~~eI6I6W4wOsVjxgnf1TGOiw==/com.dts.freefireth-E-hRAzA1WRAwmVJah_awUQ==/base.apk"
-    
+            
+            memory_available = major_login.memory_available
+            memory_available.version = 55
+            memory_available.hidden_value = random.randint(80, 98)
+            
+            # --- স্টোরেজ ডাটা ---
+            major_login.external_storage_total = 256000 
+            major_login.external_storage_available = random.randint(50000, 150000)
+            major_login.internal_storage_total = 256000
+            major_login.internal_storage_available = random.randint(40000, 100000)
+            
+            major_login.library_path = f"/data/app/com.dts.freefireth/lib/{selected_emu['name'].lower()}"
+            major_login.library_token = f"emu_token_{uuid.uuid4().hex[:16]}"
+            
             major_login.client_using_version = "7428b253defc164018c604a1ebbfebdf"
-            major_login.supported_astc_bitset = 8191
-    
-            major_login.analytics_detail = b"KqsHT20lrgH2VZSZVBrjiMQlH1D4ByEnCuAp9O88Z77L10j7f3Nyn/PzA3fYYKorO4qAlimdHPTie8ttBgw98SG36+U=" 
-    
-            major_login.loading_time = 111207
-            major_login.release_channel = "android"
+            major_login.supported_astc_bitset = 16383
+            major_login.analytics_detail = b"FwQVTgUPX1UaUllDDwcWCRBpWAUOUgsvA1snWlBaO1kFYg=="
+            major_login.loading_time = random.randint(1500, 4000) 
+            
+            major_login.release_channel = "official"
             major_login.if_push = 1
             major_login.is_vpn = 0
-            major_login.cpu_type = 2
-            major_login.cpu_architecture = "64"
-            major_login.client_version_code = "2019120828"
-            major_login.graphics_api = "OpenGLES2"
-            major_login.android_engine_init_flag = 1003114253
+            major_login.cpu_type = 1                # x86
+            major_login.cpu_architecture = "x86_64"
+            major_login.android_engine_init_flag = 110009
 
             raw_data = major_login.SerializeToString()
             key = b'Yg&tc%DEuh6%Zc^8'
