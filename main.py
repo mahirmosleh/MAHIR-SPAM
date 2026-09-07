@@ -212,8 +212,8 @@ def load_saved_targets():
                     start_spam(uid, 'full')
 
 # ==================== STATUS CHECKER ====================
-_ID = '4210325594'
-_PW = 'JOBAYAR-TX6CSDRJQ-MODX'
+_ID = '4216301829'
+_PW = 'XPOPUUDE8TSMBY'
 _TTL = 6 * 60 * 60
 _cx = {}
 _lk = threading.Lock()
